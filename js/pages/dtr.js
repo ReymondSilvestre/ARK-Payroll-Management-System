@@ -1,0 +1,50 @@
+/* ============================================================
+   DTR / BIOMETRIC tab - the page and its three sections. (Calculation is in js/dtr/dtr-calc.js.)
+   File: js/pages/dtr.js
+   ============================================================ */
+
+function dtr(selNo) {
+  const D = ST.dtr, ids = Object.keys(D.days), dates = ids.flatMap((i) => Object.keys(D.days[i])).sort(), from = D.from || dates[0] || "", to = D.to || dates[dates.length - 1] || "", M = (ST._dm = null, dtrMap(), ST.dtrSel = selNo, dtrMap()), un = M.unmatched, list = ST.employees.filter((e) => M.byEmp[e.id]);
+  const sel = list.find((e) => e.id === selNo);
+  const lkOpts = (u) => { const bp = bioParts(u.name), cand = new Set((u.amb || []).map((e) => e.id)), sc = (e) => { const ep = empParts(e); return bp ? bp.all.filter((t) => [...ep.L, ...ep.F].some((x) => tokEq(t, x))).length : 0; }; return ST.employees.slice().sort((a, b) => (cand.has(b.id) - cand.has(a.id)) || (sc(b) - sc(a)) || nameOf(a).localeCompare(nameOf(b))).map((e) => `<option value="${e.id}">${esc(e.no)} - ${esc(nameOf(e))}</option>`).join(""); };
+  const unCard = un.length ? `<div class="card noprint"><h3>Not matched to an employee (${un.length})</h3><p class="muted">No employee has this name, or the file has no name for it. Choose the employee for each record; the link is remembered for the next upload.</p><div class="tw"><table><tr><th>Biometric ID</th><th>Name in the file</th><th class="n">Punches</th><th>Link to employee</th></tr>${un.map((u) => `<tr><td>${esc(u.key.startsWith("n:") ? "(none)" : u.key)}</td><td>${esc(u.name || "-")}${u.amb ? ` <small class="muted">fits several: ${u.amb.map((e) => esc(nameOf(e))).join(" / ")}</small>` : ""}</td><td class="n">${Object.values(D.days[u.key]).reduce((n, a) => n + a.length, 0)}</td><td><select data-lk="${esc(u.key)}"><option value="">Choose employee...</option>${lkOpts(u)}</select></td></tr>`).join("")}</table></div></div>` : "";
+  const emptyCard = '<div class="card empty"><b>No punches yet</b><p class="muted">Upload a biometric file under <b>Biometric files</b> to build the DTR of every employee.</p></div>';
+  V(`${dtrTabs(un.length, ids.length)}<div data-dp="files" ${dpHide("files", ids.length)}><div class="card noprint"><h3>Biometric files</h3><p class="muted">Upload one or more biometric exports (Excel, CSV, or the text / DAT file from the device). Each punch needs a date and time plus the employee's name or number. Employees are matched by <b>name</b> (Last name, First name, Initial) first, so the Biometric ID does not have to be the same as the Employee ID; the ID number is used only when the file has no name. The first punch of a day is time in, the last is time out.</p>
+  <div class="row"><div><label>Files</label><input type="file" id="bf" multiple accept=".xlsx,.xls,.csv,.txt,.dat,.log"></div><div><label>Date format in the file</label><select id="bo"><option value="MDY">Month / Day / Year</option><option value="DMY" ${ST.settings.dtr.dateOrder === "DMY" ? "selected" : ""}>Day / Month / Year</option></select></div>${ids.length ? '<button class="btn d" id="bc">Clear punches</button>' : ""}</div></div>
+  ${unCard}</div>
+  <div data-dp="att" ${dpHide("att", ids.length)}>${ids.length ? attendHTML(list, from, to) : emptyCard}</div>
+  <div data-dp="pay" ${dpHide("pay", ids.length)}>${ids.length ? `<div class="card"><h3>Use in payroll</h3><div class="row noprint"><div><label>From</label><input type="date" id="df" value="${from}"></div><div><label>To</label><input type="date" id="dto" value="${to}"></div><button class="btn p" id="gp">Use in payroll</button></div>
+  <p class="muted">${ids.length} biometric record(s) with punches (${list.length} matched to employees), ${dates[0]} to ${dates[dates.length - 1]}. The Payroll tab fills in absences, late minutes, overtime and teacher hours from this DTR; you can still type over them.${un.length ? ` <b>${un.length} not matched - see Biometric files.</b>` : ""}</p>
+  <div class="tw"><table><tr><th>No.</th><th>Name</th><th>Biometric ID</th><th>Matched by</th><th>Group</th><th class="n">Days present</th><th class="n">Absent</th><th class="n">Half day</th><th class="n">Late (days)</th><th class="n">Late</th><th class="n">Overtime</th><th class="n">Hours worked</th><th>Shift</th><th></th></tr>${list.map((e) => { const c = dtrCalc(e, from, to), x = M.byEmp[e.id]; return `<tr class="${sel && sel.id === e.id ? "sel" : ""}"><td>${esc(e.no)}</td><td>${esc(nameOf(e))}</td><td>${esc(x.keys.map((k) => k.startsWith("n:") ? "(name only)" : k).join(", "))}</td><td>${esc(x.by.join(", "))}${x.warn.length ? ` <small style="color:#7a0c14">${esc(x.warn[0])}</small>` : ""}${x.by.includes("manual") ? ` <button class="btn sm noprint" data-ul="${e.id}">Unlink</button>` : ""}</td><td>${CATEGORIES.find((z) => z.key === categoryOf(e)).short}</td><td class="n">${c.present}</td><td class="n">${c.absent}</td><td class="n">${c.half}</td><td class="n">${c.lateDays}</td><td class="n">${fmtHM0(c.late)}</td><td class="n">${fmtHM0(c.otMin)}</td><td class="n">${fmtHM0(c.hrsMin)}</td><td>${esc([...c.scheds].join(" / "))}</td><td><button class="btn sm" data-dv="${e.id}">View DTR</button></td></tr>`; }).join("")}</table></div></div>` : emptyCard}
+  ${sel ? (() => { const c = dtrCalc(sel, from, to); return `<div class="card ps dtrsheet"><h2>DAILY TIME RECORD</h2><p style="text-align:center;margin:0">${from} to ${to}</p><p><b>${esc(nameOf(sel))}</b> &middot; ${esc(sel.position)} &middot; No. ${esc(sel.no)}</p><table><tr><th>Date</th><th>Day</th><th>Shift</th><th>Time in</th><th>Time out</th><th class="n">Hours</th><th class="n">Late</th><th class="n">Overtime</th><th>Remarks</th></tr>${c.rows.map((r) => `<tr><td>${r.d}</td><td>${new Date(r.d + "T12:00").toLocaleDateString("en-US", { weekday: "short" })}</td><td>${esc(r.sched || "")}</td>${dtrTc(r, "in")}${dtrTc(r, "out")}<td class="n">${r.hrs ? fmtHM(Math.round(r.hrs * 60)) : ""}</td><td class="n">${fmtHM0(r.late)}</td><td class="n">${fmtHM0(r.ot)}</td><td>${r.note}${dtrRst(r)}</td></tr>`).join("")}<tr class="tot"><td colspan="5">Total</td><td class="n">${fmtHM(c.hrsMin)}</td><td class="n">${fmtHM(c.late)}</td><td class="n">${fmtHM(c.otMin)}</td><td>Absent: ${c.absent}</td></tr></table><div class="sg"><div>Employee</div><div>Verified by</div></div><p class="noprint">${dtrBar(sel.id)} <button class="btn" onclick="print()">Print DTR</button></p></div>`; })() : ""}</div>`);
+  $("#bf").onchange = async (ev) => {
+    const fs = [...ev.target.files]; if (!fs.length) return; ST.settings.dtr.dateOrder = $("#bo").value; let n = 0;
+    $("#busy").innerHTML = '<div class="bx"><div class="spin"></div><b>Reading biometric files</b><div class="bar"><i></i></div></div>'; $("#busy").style.display = "flex";
+    try { for (const f of fs) for (const [id, dt, nm] of await readPunches(f)) { const d = ymd(dt), a = ((D.days[id] ||= {})[d] ||= []), t = dt.getHours() * 60 + dt.getMinutes() + Math.round(dt.getSeconds() / 60 * 1e4) / 1e4; if (!a.includes(t)) { a.push(t); n++; } if (nm) { D.names ||= {}; if (!D.names[id] || nm.length > D.names[id].length) D.names[id] = nm; } } }
+    catch (e) { $("#busy").style.display = "none"; return toast("Could not read the file: " + e.message, true); }
+    $("#busy").style.display = "none"; D.from = D.to = ""; saveDtr(); ST._dm = null; const MM = dtrMap(); n ? toast(`${n} punches added from ${fs.length} file(s). ${Object.keys(MM.byEmp).length} employee(s) matched${MM.unmatched.length ? `, ${MM.unmatched.length} still need linking` : ""}.`) : toast("No punches found. Each row needs a date with time and an employee name or number.", true); if (n) ST.dtrView = "att"; dtr();
+  };
+  if (ids.length) {
+    $("#bc").onclick = () => { if (confirm("Remove all uploaded punches?")) { ST.dtr = { days: {}, names: {}, link: D.link || {} }; saveDtr(); ST.dtrView = "files"; dtr(); } };
+    $("#df").onchange = (e) => { D.from = e.target.value; dtr(selNo); }; $("#dto").onchange = (e) => { D.to = e.target.value; dtr(selNo); };
+    $("#gp").onclick = () => { ST.tab = "run"; shell(); };
+    if ($("#ld")) $("#ld").onchange = (e) => { ST.lateDate = e.target.value; dtr(selNo); };
+    if ($("#lf")) $("#lf").onchange = (e) => { ST.attF = e.target.value; ST.lateDate = ""; dtr(selNo); };
+    if ($("#aq")) { $("#aq").oninput = (e) => { ST.attQ = e.target.value; attDraw(); }; attDraw(); }
+    document.querySelectorAll("[data-dv]").forEach((b) => b.onclick = () => { ST.dtrEdit = false; ST.dtrView = "pay"; dtr(b.dataset.dv); });
+    document.querySelectorAll("[data-lk]").forEach((x) => x.onchange = () => { if (!x.value) return; (D.link ||= {})[x.dataset.lk] = x.value; saveDtr(); toast("Linked."); dtr(selNo); });
+    document.querySelectorAll("[data-ul]").forEach((b) => b.onclick = () => { for (const k of Object.keys(D.link || {})) if (D.link[k] === b.dataset.ul) delete D.link[k]; saveDtr(); dtr(selNo); });
+  }
+}
+
+/* ---------- DTR page sections: Biometric files | Attendance check | Use in payroll ---------- */
+const DTR_VIEWS = [["files", "Biometric files"], ["att", "Attendance check"], ["pay", "Use in payroll"]];
+
+const dtrView = (has) => ST.dtrView || (has ? "att" : "files");
+
+const dpHide = (k, has) => (dtrView(has) === k ? "" : "hidden");
+
+const dtrTabs = (nUn, has) => `<div class="chips noprint" id="dtv">${DTR_VIEWS.map(([k, l]) => `<button data-dtv="${k}" class="${dtrView(has) === k ? "on" : ""}">${l}${k === "files" && nUn ? ` (${nUn} to link)` : ""}</button>`).join("")}</div>`;
+
+document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-dtv]"); if (!b) return; ST.dtrView = b.dataset.dtv; document.querySelectorAll("#dtv [data-dtv]").forEach((x) => x.classList.toggle("on", x === b)); document.querySelectorAll("[data-dp]").forEach((p) => p.hidden = p.dataset.dp !== ST.dtrView); });
+
