@@ -97,15 +97,19 @@ document.addEventListener("click", (ev) => { if (ev.target.id === "phx") { ST.ph
 function empList() {
   const ES = ST.empSec || "all", depts = [...new Set(ST.employees.filter((x) => categoryOf(x) === "staff").map((x) => x.dept || "No department"))].sort();
   if (ES === "staff" && ST.empDept && !depts.includes(ST.empDept)) ST.empDept = "";
-  return ST.employees.filter((x) => (ES === "all" || categoryOf(x) === ES) && (ES !== "staff" || !ST.empDept || (x.dept || "No department") === ST.empDept));
+  const so = ST.empSort || "az";   // Sort filter: Name A - Z (default), Name Z - A, Employee no.
+  return ST.employees.filter((x) => (ES === "all" || categoryOf(x) === ES) && (ES !== "staff" || !ST.empDept || (x.dept || "No department") === ST.empDept)).sort((a, b) => so === "no" ? String(a.no).localeCompare(String(b.no), undefined, { numeric: true }) : so === "za" ? nameOf(b).localeCompare(nameOf(a)) : nameOf(a).localeCompare(nameOf(b)));
 }
 
 function empFilter() {
   const ES = ST.empSec || "all", cnt = (k) => ST.employees.filter((x) => k === "all" || categoryOf(x) === k).length, depts = [...new Set(ST.employees.filter((x) => categoryOf(x) === "staff").map((x) => x.dept || "No department"))].sort();
   const cards = [["all", "All employees", "Admins, staff and teachers"], ...SECS];
   return `<div data-pane="list" ${paneHide("list")}><div class="seg noprint">${cards.map(([k, l, s]) => `<button class="${ES === k ? "on" : ""}" data-es="${k}"><b>${l}</b><small>${cnt(k)} employees &middot; ${s}</small></button>`).join("")}</div>
+  <div class="row noprint" style="margin:.4rem 0"><div><label>Sort names</label><select id="esort">${[["az", "Name A - Z"], ["za", "Name Z - A"], ["no", "Employee no."]].map(([v, l]) => `<option value="${v}" ${(ST.empSort || "az") === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
   ${ES === "staff" ? `<div class="chips noprint"><button class="${ST.empDept ? "" : "on"}" data-ed="">All departments</button>${depts.map((d) => `<button class="${ST.empDept === d ? "on" : ""}" data-ed="${esc(d)}">${esc(d)}</button>`).join("")}</div>` : ""}</div>`;
 }
+
+document.addEventListener("change", (ev) => { if (ev.target && ev.target.id === "esort") { ST.empSort = ev.target.value; emp(); } });
 
 document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-es],[data-ed]"); if (!b) return; if (b.dataset.es !== undefined) { ST.empSec = b.dataset.es; ST.empDept = ""; } else ST.empDept = b.dataset.ed; emp(); });
 

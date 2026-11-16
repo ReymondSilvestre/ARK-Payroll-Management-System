@@ -23,6 +23,7 @@ function schedOf(e, p) {
     }
     st = shift.start; en = shift.end;
   }
+  if (g === "teacher") { const tt = (D.teacherTimes || {})[e.id]; if (tt && tt.start && tt.end) { st = tt.start; en = tt.end; } }   // Teacher Hours menu: this teacher's own time in / time out (e.g. 6:00 AM - 3:00 PM) wins over shifts and the teachers' default
   const S0 = m(st), E0 = m(en);
   return { st, en, S0, E0, MID: Math.round((S0 + E0) / 2), shift };
 }
@@ -39,7 +40,7 @@ function deptNames(S) {
 /** Teacher Hours menu: the hours a teacher is scheduled on one weekday (0 = Sunday ... 6 = Saturday). no hours typed for this teacher = the default hours per day; null = no default either (the biometric hours are used); 0 = a day without classes. */
 function tHrs(e, dow) {
   if (!e || categoryOf(e) !== "teacher") return null;
-  const D = ST.settings.dtr, t = (D.teacherHrs || {})[e.id], def = +(D.teacherDefHrs ?? 8) || 0; if (!t || !t.h) return def > 0 ? def : null;   // no hours typed: the default hours per day (Teacher Hours menu, 8 unless changed; 0 = use the biometric hours)
+  const D = ST.settings.dtr, t = (D.teacherHrs || {})[e.id], def = +(D.teacherDefHrs ?? 8) || 0; if (!t || !t.h) { const tt = (D.teacherTimes || {})[e.id], mm = (x) => { const [h, i] = String(x).split(":").map(Number); return h * 60 + (i || 0); }; if (tt && tt.start && tt.end && mm(tt.end) > mm(tt.start)) { const span = mm(tt.end) - mm(tt.start); return Math.max(0, span - (span > 300 ? +D.lunchMin || 0 : 0)) / 60; } return def > 0 ? def : null; }   // no hours typed but a personal time in / out is set (6:00 - 15:00): hours = time out - time in - lunch break   // no hours typed: the default hours per day (Teacher Hours menu, 8 unless changed; 0 = use the biometric hours)
   const v = t.h[dow]; return v === undefined || v === null || v === "" ? 0 : Math.max(0, +v || 0);
 }
 
