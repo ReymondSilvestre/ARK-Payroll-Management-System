@@ -25,11 +25,14 @@ var TABS = {
   Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active'],
   'Overtime File': ['ID', 'Employee ID', 'Employee No', 'Name', 'Date', 'Hours', 'Reason', 'Filed by', 'Filed at'],
   'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'],
-  'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks', 'Fixed holiday pay (per day)', 'Fixed WFH pay (per day)']   // one row per teacher per work day (written at every settings save)
+  'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks', 'Fixed holiday pay (per day)', 'Fixed WFH pay (per day)'],   // one row per teacher per work day (written at every settings save)
+  'Class Schedule': ['ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Days', 'Start', 'End', 'Active'],   // the classes of each teacher (Days = 1,2,3 = Mon, Tue, Wed ... 0 = Sun)
+  'Class Attendance': ['Date', 'Class ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Scheduled start', 'Scheduled end', 'Time in', 'Time out', 'Status', 'Remarks', 'Checked by', 'Checked at']   // what the Class Monitor recorded, one row per class per date
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
-var ROLES = ['payroll', 'hr'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v8-2026-11-18c';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark'];   // what a Class Monitor account may call: the class check, nothing else
+var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
+var SCHEMA_V = 'v9-2026-11-18d';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -90,6 +93,8 @@ function ensureSchema_(ss) {
     }
     if (n === 'Overtime File') [1, 2, 3, 5, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Teacher Hours' && sh.getRange(1, 9).getValue() !== 'Fixed holiday pay (per day)') sh.getRange(1, 9, 1, 2).setValues([['Fixed holiday pay (per day)', 'Fixed WFH pay (per day)']]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');   // older Teacher Hours tab: add the two fixed-pay columns
+    if (n === 'Class Schedule') [1, 2, 3, 7, 8, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
+    if (n === 'Class Attendance') [1, 2, 3, 4, 8, 9, 10, 11, 15].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Teacher Hours') [1, 5, 6].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Payslip Summary') [1, 2, 3, 5].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Employees') [2, 7, 13, 15, 16, 17, 18].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // numbers like SSS / TIN keep their zeros, dates stay as typed
@@ -123,7 +128,7 @@ function resetDefaultUser() {
   seedUser_(); return 'Default user reset: ' + DEFAULT_EMAIL + ' / ' + DEFAULT_PASS;
 }
 
-function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18c' }); }
+function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18d' }); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 function doPost(e) {
@@ -144,6 +149,7 @@ function doPost(e) {
     if (cache.get('off_' + me.id)) return out_({ ok: false, error: 'unauthenticated' });   // account disabled or deleted: the session ends at once
     var rr = cache.get('role_' + me.id); if (rr) me.role = rr;                                // role changed since sign-in
     if (String(me.role) === 'hr' && HR_ACTIONS.indexOf(A) < 0) return out_({ ok: false, error: 'Your HR account can only use Leave and the Overtime File.' });
+    if (String(me.role) === 'monitor' && MON_ACTIONS.indexOf(A) < 0) return out_({ ok: false, error: 'Your Class Monitor account can only use the Class Monitor menu.' });
     var Emp = ss.getSheetByName('Employees'), Run = ss.getSheetByName('Payroll Runs'), Sl = ss.getSheetByName('Payslips'), St = ss.getSheetByName('Settings'), Sm = ss.getSheetByName('Payslip Summary');
     var res = null;
 
@@ -156,7 +162,9 @@ function doPost(e) {
         delete setObj.otFile; St.getRange(st0._row, 2).setValue(JSON.stringify(setObj));
       }
       var lvs = rows_(ss.getSheetByName('Leaves')).filter(function (r) { return r.ID; }).map(lvOut_);
-      if (String(me.role) === 'hr') {   // HR sees only what Leave and the Overtime File need: no salaries, no government numbers, no payroll settings
+      if (String(me.role) === 'monitor') {   // the Class Monitor sees the teachers' names and the holidays, nothing about pay
+        res = { settings: monSettings_(setObj), employees: rows_(Emp).filter(function (r) { return r.ID; }).map(function (r) { var o = empOut_(r); return { id: o.id, no: o.no, last: o.last, first: o.first, mi: o.mi, name: o.name, position: o.position, dept: o.dept, etype: o.etype, status: o.status, category: o.category, photo: '' }; }), runs: [], leaves: [], backup: '' };
+      } else if (String(me.role) === 'hr') {   // HR sees only what Leave and the Overtime File need: no salaries, no government numbers, no payroll settings
         var sOut = hrSettings_(setObj); sOut.otFile = ot;
         res = { settings: sOut, employees: rows_(Emp).filter(function (r) { return r.ID; }).map(function (r) { var o = empOut_(r); return { id: o.id, no: o.no, last: o.last, first: o.first, mi: o.mi, name: o.name, position: o.position, dept: o.dept, etype: o.etype, status: o.status, category: o.category, photo: '' }; }), runs: [], leaves: lvs, backup: '' };
       } else {
@@ -274,6 +282,32 @@ function doPost(e) {
       if (String(d.password || '').length < 8) return out_({ ok: false, error: 'The database password must be at least 8 characters.' });
       if (pr.getProperty('DB_PW_HASH')) { var chk2 = dbPwCheck_(d.current, cache); if (chk2) return out_({ ok: false, error: chk2 }); }
       var s3 = uid_(); pr.setProperty('DB_PW_SALT', s3); pr.setProperty('DB_PW_HASH', hash_(d.password, s3)); res = true;
+    } else if (A === 'clsGet') {                 // CLASS MONITOR: the classes and what was recorded on one date (monitor and payroll)
+      res = { classes: classesOut_(ss), att: attOut_(ss, String(d.date || ''), String(d.date || '')) };
+    } else if (A === 'clsReport') {              // payroll / owner only: everything recorded between two dates
+      res = { classes: classesOut_(ss), att: attOut_(ss, String(d.from || ''), String(d.to || '')) };
+    } else if (A === 'clsSave') {                // payroll / owner only: the class schedule of the teachers (the whole list is rewritten)
+      var Cs = ss.getSheetByName('Class Schedule'), empBy = {}, lastE = Emp.getLastRow(), cl = (d.classes || []).filter(function (c) { return c && c.empId && c.start && c.end; });
+      if (lastE > 1) Emp.getRange(2, 1, lastE - 1, 11).getValues().forEach(function (r) { empBy[String(r[0])] = { no: txt_(r[1]), name: String(r[5] || '') }; });
+      var cRows = cl.map(function (c) { var em = empBy[String(c.empId)] || { no: '', name: '' }; return [String(c.id || uid_()), String(c.empId), em.no, em.name, String(c.subject || ''), String(c.room || ''), (c.days || []).join(','), String(c.start), String(c.end), c.active === false ? 'no' : 'yes']; });
+      var oldC = Cs.getLastRow(); if (oldC > 1) Cs.getRange(2, 1, oldC - 1, 10).clearContent();
+      if (cRows.length) { if (Cs.getMaxRows() < cRows.length + 2) Cs.insertRowsAfter(Cs.getMaxRows(), cRows.length + 2 - Cs.getMaxRows()); Cs.getRange(2, 1, cRows.length, 10).setValues(cRows); }
+      res = classesOut_(ss); markBackup_();
+    } else if (A === 'clsMark') {                // the Class Monitor clocks a teacher in / out of one class: [{classId, in, out, status, remarks}]
+      var today = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd'), dt = String(d.date || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return out_({ ok: false, error: 'Choose a date.' });
+      if (String(me.role) === 'monitor' && dt !== today) return out_({ ok: false, error: 'The Class Monitor can only record the classes of today.' });
+      var Ca = ss.getSheetByName('Class Attendance'), sched = {}, exist = {}, lastA = Ca.getLastRow(), nowT = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm'), fresh = [];
+      rows_(ss.getSheetByName('Class Schedule')).forEach(function (r) { if (r.ID) sched[String(r.ID)] = r; });
+      if (lastA > 1) Ca.getRange(2, 1, lastA - 1, 2).getDisplayValues().forEach(function (r, i) { if (r[0] === dt) exist[r[1]] = i + 2; });
+      (d.items || []).forEach(function (it) {
+        var c = sched[String(it.classId)]; if (!c) return;
+        var row = [dt, String(c.ID), String(c['Employee ID']), txt_(c['Employee No']), String(c.Teacher), String(c.Subject), String(c['Section / Room']), txt_(c.Start), txt_(c.End), String(it['in'] || ''), String(it.out || ''), String(it.status || ''), String(it.remarks || ''), me.name, nowT], rn = exist[String(c.ID)];
+        if (rn) Ca.getRange(rn, 1, 1, 15).setValues([row]); else fresh.push(row);
+      });
+      if (fresh.length) { var n1 = Ca.getLastRow() + 1; if (Ca.getMaxRows() < n1 + fresh.length) Ca.insertRowsAfter(Ca.getMaxRows(), n1 + fresh.length - Ca.getMaxRows()); Ca.getRange(n1, 1, fresh.length, 15).setNumberFormat('@').setValues(fresh); }
+      res = attOut_(ss, dt, dt);
+      if (!cache.get('cls_bk')) { cache.put('cls_bk', '1', 1800); markBackup_(); }   // the backup report follows the class check (at most every 30 minutes; the nightly backup also catches up)
     } else if (A === 'otAdd') {                   // add / change overtime entries: [{id, empId, date, hours, reason}] (HR and payroll)
       otPut_(ss, d.list || [], me.name); res = otRows_(ss);
     } else if (A === 'otRemove') {
@@ -308,6 +342,23 @@ function runsOut_(Run) {
   return rows_(Run).filter(function (r) { return r['Run ID']; }).map(function (r) { return { id: r['Run ID'], period: r.Period, payDate: r['Pay date'], count: r.Employees, gross: r.Gross, ded: r.Deductions, net: r['Net pay'], group: r.Group || '', status: r.Status || 'Finalized', by: r['Saved by'], at: r['Saved at'] }; });
 }
 function hrSettings_(s) { s = s || {}; var D = s.dtr || {}; return { leaveTypes: s.leaveTypes || null, leaveTotal: s.leaveTotal, unpaidLeave: s.unpaidLeave, workDays: s.workDays, dtr: { workDays: D.workDays, holidays: D.holidays || [] } }; }
+
+/* CLASS MONITOR helpers */
+function monSettings_(s) { s = s || {}; var D = s.dtr || {}; return { workDays: s.workDays, dtr: { workDays: D.workDays, holidays: D.holidays || [], wfhDays: D.wfhDays || [], graceTeacher: D.graceTeacher, grace: D.grace || {} } }; }
+function classesOut_(ss) {
+  return rows_(ss.getSheetByName('Class Schedule')).filter(function (r) { return r.ID; }).map(function (r) {
+    return { id: String(r.ID), empId: String(r['Employee ID']), no: txt_(r['Employee No']), name: String(r.Teacher || ''), subject: String(r.Subject || ''), room: String(r['Section / Room'] || ''), days: txt_(r.Days).split(',').filter(function (x) { return x !== ''; }).map(Number), start: txt_(r.Start), end: txt_(r.End), active: String(r.Active) !== 'no' };
+  });
+}
+function attOut_(ss, from, to) {   // recorded classes between two dates (yyyy-mm-dd, both included); only the last 6000 rows are read for a single day
+  var sh = ss.getSheetByName('Class Attendance'), last = sh.getLastRow(), out = [], first = from === to ? Math.max(2, last - 6000) : 2;
+  if (last < 2) return out;
+  sh.getRange(first, 1, last - first + 1, 15).getDisplayValues().forEach(function (r) {
+    if (r[0] >= from && r[0] <= to) out.push({ date: r[0], classId: r[1], empId: r[2], no: r[3], name: r[4], subject: r[5], room: r[6], start: r[7], end: r[8], 'in': r[9], out: r[10], status: r[11], remarks: r[12], by: r[13], at: r[14] });
+  });
+  return out;
+}
+var DAYS3_ = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
 
 /* OVERTIME FILE: its own tab (Overtime File). Entries: {id, empId, date, hours, reason}. */
 function otOut_(r) { return { id: String(r.ID), empId: String(r['Employee ID']), no: txt_(r['Employee No']), name: r.Name, date: txt_(r.Date), hours: +r.Hours || 0, reason: r.Reason || '', by: r['Filed by'] || '', at: txt_(r['Filed at']) }; }
@@ -410,7 +461,7 @@ function thPut_(ss, st) {   // rewrites the Teacher Hours tab of the database so
   if (rows.length) sh.getRange(2, 1, rows.length, w).setValues(rows);
 }
 
-function bkBuild_(emps, runs, slips, year, workDays, st) {
+function bkBuild_(emps, runs, slips, year, workDays, st, cls) {
   var empBy = {}, nameBy = {}, runBy = {}, stamp = Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a');
   emps.forEach(function (e) { empBy[String(e.no)] = e; nameBy[String(e.name).toLowerCase()] = e; });
   runs.forEach(function (r) { runBy[String(r['Run ID'])] = r; });
@@ -482,6 +533,13 @@ function bkBuild_(emps, runs, slips, year, workDays, st) {
 
   // 7b. TEACHER HOURS: every teacher, every work day (different time in / out each day)
   defs.push({ name: 'TEACHER HOURS', title: 'TEACHER HOURS', subtitle: sub + '  |  time in, time out and paid hours of each teacher per day, from the Teacher Hours menu', blocks: [{ header: TABS['Teacher Hours'], text: [0, 4, 5], money: [], total: [], rows: thRows_(st, emps) }] });
+
+  // 7c. CLASS SCHEDULE and CLASS ATTENDANCE (recorded by the Class Monitor)
+  var CL = cls || { sched: [], att: [] };
+  defs.push({ name: 'CLASS SCHEDULE', title: 'CLASS SCHEDULE', subtitle: sub + '  |  the classes of each teacher', blocks: [{ header: ['Employee No', 'Teacher', 'Subject', 'Section / Room', 'Days', 'Start', 'End', 'Active'], text: [0, 5, 6], money: [], total: [],
+    rows: CL.sched.map(function (r) { return [txt_(r['Employee No']), String(r.Teacher || ''), String(r.Subject || ''), String(r['Section / Room'] || ''), txt_(r.Days).split(',').filter(function (x) { return x !== ''; }).map(function (x) { return DAYS3_[+x]; }).join(', '), fmt12_(txt_(r.Start)), fmt12_(txt_(r.End)), String(r.Active) === 'no' ? 'No' : 'Yes']; }) }] });
+  defs.push({ name: 'CLASS ATTENDANCE', title: 'CLASS ATTENDANCE  |  ' + year, subtitle: sub + '  |  time in / time out of each teacher per class, checked by the Class Monitor, newest first', blocks: [{ header: ['Date', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Scheduled start', 'Scheduled end', 'Time in', 'Time out', 'Status', 'Remarks', 'Checked by', 'Checked at'], text: [0, 1, 5, 6, 7, 8, 12], money: [], total: [],
+    rows: CL.att.filter(function (r) { return txt_(r.Date).slice(0, 4) === String(year); }).sort(function (a, b) { return txt_(a.Date) < txt_(b.Date) ? 1 : txt_(a.Date) > txt_(b.Date) ? -1 : (txt_(a['Scheduled start']) < txt_(b['Scheduled start']) ? -1 : 1); }).map(function (r) { return [txt_(r.Date), txt_(r['Employee No']), String(r.Teacher || ''), String(r.Subject || ''), String(r['Section / Room'] || ''), fmt12_(txt_(r['Scheduled start'])), fmt12_(txt_(r['Scheduled end'])), fmt12_(txt_(r['Time in'])), fmt12_(txt_(r['Time out'])), String(r.Status || ''), String(r.Remarks || ''), String(r['Checked by'] || ''), txt_(r['Checked at'])]; }) }] });
 
   // 8-9. 13TH MONTH PAY, split in two halves: January - June and July - December (hand edits made in the app are included)
   var ED = ((st || {}).m13Edits || {})[year] || {};
@@ -581,7 +639,8 @@ function updateBackup_(year, sheets) {
   if (!ss) { ss = SpreadsheetApp.create(BK_NAME); props.setProperty('BK_ID', ss.getId()); }   // created private in your Drive
   var setRow = rows_(db.getSheetByName('Settings')).filter(function (r) { return r.Key === 'settings'; })[0], wd = 22;
   var stObj = {}; try { stObj = JSON.parse(setRow.Value) || {}; wd = +stObj.workDays || 22; } catch (e0) { }
-  var defs = bkBuild_(emps, runs, slips, y, wd, stObj).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
+  var cls = { sched: rows_(db.getSheetByName('Class Schedule')).filter(function (r) { return r.ID; }), att: rows_(db.getSheetByName('Class Attendance')).filter(function (r) { return r['Class ID']; }) };
+  var defs = bkBuild_(emps, runs, slips, y, wd, stObj, cls).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
   // The attendance tabs are filled from the app. Until the first time they are sent, show them as empty tabs so they are always in the backup.
   [['DAILY ATTENDANCE LOGS', TABS['Daily Attendance Logs']],
    ['SUMMARY OF ATTENDANCE', TABS['Summary of Attendance']]].forEach(function (p) {
