@@ -55,7 +55,7 @@ const m13Rows = () => (ST.m13.rows || []).filter((x) => x.autoBasic > 0 && (ST.m
 
 function m13Sheet() {
   const R = m13Rows(), M = ST.m13;
-  return { name: "13th Month Pay", header: ["Employee No", "Name", "Department", "Group", "Position", ...MONN, "Release", "Total basic earned", "Less absences and late", "Net basic salary", "13th month pay", "Taxable over 90,000", "Year", "Edited by hand"], text: [0],
+  return { name: M.part === "h1" ? "13th Month Jan-Jun" : M.part === "h2" ? "13th Month Jul-Dec" : "13th Month Pay", header: ["Employee No", "Name", "Department", "Group", "Position", ...MONN, "Release", "Total basic earned", "Less absences and late", "Net basic salary", "13th month pay", "Taxable over 90,000", "Year", "Edited by hand"], text: [0],
     rows: R.map((x) => [x.no, x.name, x.dept, x.grp, x.position || "", ...x.m.map(r2), M13_PARTS[M.part].title, x.basic, x.ded, x.net, x.pay, x.taxable, M.year, x.edited ? "Yes" : ""]) };
 }
 

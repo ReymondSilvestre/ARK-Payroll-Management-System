@@ -24,11 +24,12 @@ var TABS = {
   'Cash Loans': ['Employee No', 'Name', 'Department', 'Group', 'Loan type', 'Description', 'Per month', 'Balance', 'Status', 'As of'],
   Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active'],
   'Overtime File': ['ID', 'Employee ID', 'Employee No', 'Name', 'Date', 'Hours', 'Reason', 'Filed by', 'Filed at'],
-  'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature']
+  'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'],
+  'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks']   // one row per teacher per work day (written at every settings save)
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
 var ROLES = ['payroll', 'hr'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v6-2026-11-18';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var SCHEMA_V = 'v7-2026-11-18b';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -88,6 +89,7 @@ function ensureSchema_(ss) {
       sh.getRange(1, 34).setValue('Photo').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');
     }
     if (n === 'Overtime File') [1, 2, 3, 5, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
+    if (n === 'Teacher Hours') [1, 5, 6].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Payslip Summary') [1, 2, 3, 5].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Employees') [2, 7, 13, 15, 16, 17, 18].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // numbers like SSS / TIN keep their zeros, dates stay as typed
   });
@@ -120,7 +122,7 @@ function resetDefaultUser() {
   seedUser_(); return 'Default user reset: ' + DEFAULT_EMAIL + ' / ' + DEFAULT_PASS;
 }
 
-function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18' }); }
+function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18b' }); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 function doPost(e) {
@@ -168,6 +170,7 @@ function doPost(e) {
       if (json0.length > 49000) return out_({ ok: false, error: 'The settings are too big for one spreadsheet cell (' + json0.length + ' characters). Remove old holidays or unused shifts.' });
       var r0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0];
       if (r0) St.getRange(r0._row, 2).setValue(json0); else St.appendRow(['settings', json0]);
+      try { thPut_(ss, d); markBackup_(); } catch (eT) { }   // Teacher Hours tab in the database follows the app; the backup report is rebuilt a minute later
       res = true;
     } else if (A === 'saveEmployees') {           // add / edit / bulk upload: matched by Employee No, otherwise by last + first name. One read and one write, photos are never read back.
       var NC = 33, lastE = Emp.getLastRow(), blk = lastE > 1 ? Emp.getRange(2, 1, lastE - 1, NC).getValues() : [], added = 0, updated = 0, touched = [], fresh = [], photoSet = [], low = function (v) { return String(v || '').trim().toLowerCase(); };
@@ -245,7 +248,7 @@ function doPost(e) {
     } else if (A === 'deleteLeave') {
       var Lv2 = ss.getSheetByName('Leaves'), x5 = rows_(Lv2).filter(function (r) { return String(r.ID) === String(d.id); })[0]; if (x5) Lv2.deleteRow(x5._row); res = true;
     } else if (A === 'saveSheets') {              // attendance logs, attendance summary, cash advances, cash loans, 13th month: each sheet is rewritten
-      var ALLOWED = ['Daily Attendance Logs', 'Summary of Attendance', 'Cash Advances', 'Cash Loans', 'Allowances', '13th Month Pay'];
+      var ALLOWED = ['Daily Attendance Logs', 'Summary of Attendance', 'Cash Advances', 'Cash Loans', 'Allowances', '13th Month Pay', '13th Month Jan-Jun', '13th Month Jul-Dec'];
       (d.sheets || []).forEach(function (x) {
         if (ALLOWED.indexOf(x.name) < 0) return;
         var sh = ss.getSheetByName(x.name) || ss.insertSheet(x.name), h = x.header || [], rows = x.rows || [], w = h.length, i, n;
@@ -374,7 +377,39 @@ function periodYM_(period) {   // same reading of the pay period text as the 13t
 }
 function listText_(arr, f) { return (arr || []).map(f).filter(function (s) { return s; }).join('; '); }
 
-function bkBuild_(emps, runs, slips, year, workDays) {
+/* TEACHER HOURS: one row per teacher per work day, from the Teacher Hours menu (settings dtr.teacherDayTimes / teacherHrs / teacherTimes). Same rows go to the database tab and to the backup report. */
+var TH_DAYN_ = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 0: 'Sunday' };
+function fmt12_(t) { if (!t) return ''; var p = String(t).split(':'), h = +p[0], m = +p[1] || 0; return ((h + 11) % 12 + 1) + ':' + ('0' + m).slice(-2) + ' ' + (h < 12 ? 'AM' : 'PM'); }
+function spanHrs_(a, b, lunch) { var f = function (x) { var p = String(x).split(':'); return (+p[0]) * 60 + (+p[1] || 0); }, sp = f(b) - f(a); return sp <= 0 ? 0 : Math.max(0, sp - (sp > 300 ? lunch : 0)) / 60; }
+function thRows_(st, emps) {   // emps: [{id, no, name, dept}]
+  var D = (st && st.dtr) || {}, H = D.teacherHrs || {}, T = D.teacherDayTimes || {}, T1 = D.teacherTimes || {}, lunch = +D.lunchMin || 0, wk = (D.workDays && D.workDays.length) ? D.workDays : [1, 2, 3, 4, 5, 6], ids = {}, by = {}, rows = [];
+  [H, T, T1].forEach(function (o) { Object.keys(o).forEach(function (k) { ids[k] = 1; }); });
+  emps.forEach(function (e) { by[String(e.id)] = e; });
+  Object.keys(ids).map(function (k) { return by[k]; }).filter(function (e) { return e; }).sort(function (a, b) { return natCmp_(a.no, b.no); }).forEach(function (e) {
+    var h = (H[e.id] || {}).h, hasH = !!h && Object.keys(h).length > 0, t1 = T1[e.id];
+    [1, 2, 3, 4, 5, 6, 0].filter(function (n) { return wk.indexOf(n) >= 0; }).forEach(function (n) {
+      var dt = (T[e.id] || {})[n], hv = hasH ? h[n] : undefined, typed = hv !== undefined && hv !== null && hv !== '', own = dt && dt.start && dt.end ? dt : null, one = t1 && t1.start && t1.end ? t1 : null, tm = own || one, hrs, rem;
+      if (typed) { hrs = +hv || 0; rem = hrs === 0 ? 'Day off (no classes)' : own ? 'Time in / out of this day' : 'Hours typed'; if (hrs > 0 && !tm) tm = null; }
+      else if (hasH) { hrs = 0; rem = 'Day off (no classes)'; tm = null; }
+      else if (tm) { hrs = spanHrs_(tm.start, tm.end, lunch); rem = own ? 'Time in / out of this day' : 'Usual time of the teacher'; }
+      else return;
+      if (hrs === 0) tm = null;
+      rows.push([e.no, e.name, e.dept || '', TH_DAYN_[n], tm ? fmt12_(tm.start) : '', tm ? fmt12_(tm.end) : '', num_(hrs), rem]);
+    });
+  });
+  return rows;
+}
+function thPut_(ss, st) {   // rewrites the Teacher Hours tab of the database so it always matches the app
+  var sh = ss.getSheetByName('Teacher Hours'), Em = ss.getSheetByName('Employees'), last = Em.getLastRow(), emps = [], rows, w = 8, old = sh.getLastRow();
+  if (last > 1) emps = Em.getRange(2, 1, last - 1, 11).getValues().map(function (r) { return { id: String(r[0]), no: txt_(r[1]), name: String(r[5] || ''), dept: String(r[10] || '') }; });
+  rows = thRows_(st, emps);
+  if (!rows.length && old <= 1) return;
+  if (old > 1) sh.getRange(2, 1, old - 1, w).clearContent();
+  if (sh.getMaxRows() < rows.length + 2) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 2 - sh.getMaxRows());
+  if (rows.length) sh.getRange(2, 1, rows.length, w).setValues(rows);
+}
+
+function bkBuild_(emps, runs, slips, year, workDays, st) {
   var empBy = {}, nameBy = {}, runBy = {}, stamp = Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a');
   emps.forEach(function (e) { empBy[String(e.no)] = e; nameBy[String(e.name).toLowerCase()] = e; });
   runs.forEach(function (r) { runBy[String(r['Run ID'])] = r; });
@@ -444,7 +479,11 @@ function bkBuild_(emps, runs, slips, year, workDays) {
   defs.push({ name: 'TAX', title: 'TAX', subtitle: sub + '  |  withholding tax taken from each payslip', blocks: [{ header: ['Pay date', 'Period', 'Group', 'Employee No', 'Name', 'TIN', 'Gross pay', 'Tax withheld'], text: [0, 1, 3, 5], money: [6, 7], total: [6, 7],
     rows: S.filter(function (s) { return num_(s.r.Tax) > 0; }).map(function (s) { return [s.pay, s.period, s.grp, s.no, s.name, String(s.e.tin || ''), num_(s.r.Gross), num_(s.r.Tax)]; }) }] });
 
-  // 8-9. 13TH MONTH PAY, split in two halves: January - June and July - December
+  // 7b. TEACHER HOURS: every teacher, every work day (different time in / out each day)
+  defs.push({ name: 'TEACHER HOURS', title: 'TEACHER HOURS', subtitle: sub + '  |  time in, time out and paid hours of each teacher per day, from the Teacher Hours menu', blocks: [{ header: TABS['Teacher Hours'], text: [0, 4, 5], money: [], total: [], rows: thRows_(st, emps) }] });
+
+  // 8-9. 13TH MONTH PAY, split in two halves: January - June and July - December (hand edits made in the app are included)
+  var ED = ((st || {}).m13Edits || {})[year] || {};
   var keep = {}, ids = {}, by = {}, i;
   runs.forEach(function (r) { if (periodYM_(r.Period).y === year) keep[String(r.Group || '') + '|' + txt_(r.Period)] = String(r['Run ID']); });   // the same period saved twice counts once
   Object.keys(keep).forEach(function (k) { ids[keep[k]] = 1; });
@@ -461,13 +500,16 @@ function bkBuild_(emps, runs, slips, year, workDays) {
     nos.forEach(function (no) {
       var x = by[no], basic = 0, ded = 0, k, mm = [];
       for (k = a; k < a + 6; k++) { basic += x.m[k]; ded += x.d[k]; mm.push(num_(x.m[k])); }
-      basic = num_(basic); ded = num_(ded); if (basic <= 0) return;
-      var net = Math.max(0, num_(basic - ded));
-      rows.push([x.no, x.name, x.e.dept || '', grp_(x.e.category), x.e.position || ''].concat(mm, [basic, ded, net, num_(net / 12)]));
+      basic = num_(basic); ded = num_(ded);
+      var ed = ED[no + (h === 0 ? '|h1' : '|h2')] || {}, has = function (k) { return ed[k] !== undefined && ed[k] !== null && ed[k] !== ''; };
+      if (has('basic')) basic = num_(+ed.basic); if (has('ded')) ded = num_(+ed.ded);
+      if (basic <= 0) return;
+      var net = Math.max(0, num_(basic - ded)), pay = has('pay') ? num_(+ed.pay) : num_(net / 12);
+      rows.push([x.no, x.name, x.e.dept || '', grp_(x.e.category), x.e.position || ''].concat(mm, [basic, ded, net, pay, has('basic') || has('ded') || has('pay') ? 'Yes' : '']));
     });
     var nm = h === 0 ? '13TH MONTH JAN-JUN' : '13TH MONTH JUL-DEC', lab = h === 0 ? 'JANUARY - JUNE' : 'JULY - DECEMBER';
-    defs.push({ name: nm, title: '13TH MONTH PAY  |  ' + lab + ' ' + year, subtitle: sub + '  |  13th month pay of this half = net basic salary earned in these 6 months divided by 12 (basic only; absences and late are subtracted). January-June plus July-December = the full-year 13th month pay.',
-      blocks: [{ header: ['Employee No', 'Name', 'Department', 'Group', 'Position'].concat(MONTHS.slice(a, a + 6), ['Total basic earned', 'Less absences and late', 'Net basic salary', '13th month pay']), text: [0], money: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14], total: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14], rows: rows }] });
+    defs.push({ name: nm, title: '13TH MONTH PAY  |  ' + lab + ' ' + year, subtitle: sub + '  |  13th month pay of this half = net basic salary earned in these 6 months divided by 12 (basic only; absences and late are subtracted). January-June plus July-December = the full-year 13th month pay. Numbers typed by hand in the app are included (marked Yes).',
+      blocks: [{ header: ['Employee No', 'Name', 'Department', 'Group', 'Position'].concat(MONTHS.slice(a, a + 6), ['Total basic earned', 'Less absences and late', 'Net basic salary', '13th month pay', 'Edited by hand']), text: [0], money: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14], total: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14], rows: rows }] });
   });
   return defs;
 }
@@ -537,8 +579,8 @@ function updateBackup_(year, sheets) {
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
   if (!ss) { ss = SpreadsheetApp.create(BK_NAME); props.setProperty('BK_ID', ss.getId()); }   // created private in your Drive
   var setRow = rows_(db.getSheetByName('Settings')).filter(function (r) { return r.Key === 'settings'; })[0], wd = 22;
-  try { wd = +(JSON.parse(setRow.Value).workDays) || 22; } catch (e0) { }
-  var defs = bkBuild_(emps, runs, slips, y, wd).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
+  var stObj = {}; try { stObj = JSON.parse(setRow.Value) || {}; wd = +stObj.workDays || 22; } catch (e0) { }
+  var defs = bkBuild_(emps, runs, slips, y, wd, stObj).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
   // The attendance tabs are filled from the app. Until the first time they are sent, show them as empty tabs so they are always in the backup.
   [['DAILY ATTENDANCE LOGS', TABS['Daily Attendance Logs']],
    ['SUMMARY OF ATTENDANCE', TABS['Summary of Attendance']]].forEach(function (p) {
