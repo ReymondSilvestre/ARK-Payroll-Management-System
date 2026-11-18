@@ -40,7 +40,7 @@ function schedOf(e, p, dow) {
     }
     st = shift.start; en = shift.end;
   }
-  if (g === "teacher") { const tt = (D.teacherTimes || {})[e.id]; if (tt && tt.start && tt.end) { st = tt.start; en = tt.end; } }   // Teacher Hours menu: this teacher's own time in / time out (e.g. 6:00 AM - 3:00 PM) wins over shifts and the teachers' default
+  if (g === "teacher") { const tt = (D.teacherTimes || {})[e.id]; if (tt && tt.start && tt.end) { st = tt.start; en = tt.end; } const dt = ((D.teacherDayTimes || {})[e.id] || {})[dow]; if (dt && dt.start && dt.end) { st = dt.start; en = dt.end; } }   // a different time in / out for each weekday wins   // Teacher Hours menu: this teacher's own time in / time out (e.g. 6:00 AM - 3:00 PM) wins over shifts and the teachers' default
   const sat = dow === 6 ? satHalfOf(e) : null; if (sat) { st = sat.start; en = sat.end; }   // Saturday half day: 8:00 - 12:00 wins over shifts and department times
   const S0 = m(st), E0 = m(en);
   return { st, en, S0, E0, MID: Math.round((S0 + E0) / 2), shift, sat };
