@@ -35,6 +35,7 @@ function teacherHours() {
       <td class="n"><b class="dh">0</b></td><td class="dp muted"></td><td class="noprint"><button class="btn sm d" type="button" data-off="${n}" title="No classes this day">Day off</button></td></tr>`;
   };
 
+  const fixV = (k) => { const dr = emp && (ST.thDraft[emp.id] || {}).f; if (dr && k in dr) return dr[k]; const v = emp && ((D.teacherFixed || {})[emp.id] || {})[k]; return v === undefined || v === null ? "" : v; };
   const opts = list.map((e) => `<option value="${esc(e.id)}" ${e.id === ST.thSel ? "selected" : ""}>${esc(e.no)} - ${esc(nameOf(e))}</option>`).join("");
   const header = `<div class="row noprint" style="align-items:flex-end;gap:.7rem;flex-wrap:wrap">
       <div><label>Sort</label><select id="thsort"><option value="az">Name A - Z</option><option value="za">Name Z - A</option><option value="no">Employee no.</option></select></div>
@@ -48,6 +49,10 @@ function teacherHours() {
       <div><div style="font-size:1.15rem;font-weight:800">${esc(nameOf(emp))}</div><div class="muted">No. ${esc(emp.no)}${emp.position ? " &middot; " + esc(emp.position) : ""}${emp.dept ? " &middot; " + esc(emp.dept) : ""}</div></div>
       <div style="display:flex;gap:1.6rem;text-align:right"><div><div class="muted" style="font-size:.75rem">Hourly rate</div><b>${money(rate(emp))}</b></div><div><div class="muted" style="font-size:.75rem">Hours / week</div><b id="twk">0</b></div><div><div class="muted" style="font-size:.75rem">Pay / week</div><b id="tpw">0.00</b></div></div></div>
     <div class="tw"><table id="tht"><tr><th>Day</th><th>Time in</th><th>Time out</th><th>Hours <small class="muted">(optional)</small></th><th class="n">Paid hrs</th><th>Pay</th><th class="noprint"></th></tr>${days.map(([n, l]) => dayRow(emp, n, l)).join("")}</table></div>
+    <div class="noprint" style="margin-top:1rem;padding:.8rem 1.1rem;border:1px solid var(--line,#e4e7ec);border-radius:12px"><b>Fixed pay (optional, not per hour)</b>
+      <div class="row" style="margin-top:.5rem;gap:1rem;flex-wrap:wrap"><div><label>Holiday pay, holiday not worked (&#8369; per day)</label><input id="thfh" type="number" min="0" step="any" placeholder="${esc(((S.holiday || {}).tFixed || {}).regNot ?? "per hour")}" value="${esc(fixV("hol"))}" style="width:11rem"></div>
+      <div><label>WFH / Async class pay (&#8369; per day)</label><input id="thfw" type="number" min="0" step="any" placeholder="${esc((S.wfh || {}).teacherFixed || "per hour")}" value="${esc(fixV("wfh"))}" style="width:11rem"></div></div>
+      <p class="muted" style="margin:.4rem 0 0">Type the exact amount this teacher gets for each holiday not worked and each WFH / asynchronous day. Leave blank to use the school-wide setting (Settings &rarr; Holiday pay / WFH), or the hourly pay when that is blank too.</p></div>
     <div class="row noprint" style="margin-top:.7rem;gap:.5rem;flex-wrap:wrap">
       <button class="btn" id="thmon" type="button" title="Copy Monday's time in / out to Tuesday - Friday">Copy Monday &rarr; Tue-Fri</button>
       <button class="btn" id="thall" type="button" title="Copy Monday's time in / out to every work day">Copy Monday &rarr; all days</button>
@@ -75,7 +80,7 @@ function teacherHours() {
   const stash = () => {                                           // remember the screen so switching teacher does not lose typing
     if (!emp) return; const t = {}, h = {};
     rows().forEach((tr) => { const n = tr.dataset.day, a = tr.querySelector('[data-k="start"]').value, b = tr.querySelector('[data-k="end"]').value, hv = tr.querySelector('[data-k="h"]').value; t[n] = { start: a, end: b }; if (hv !== "") h[n] = hv; });
-    ST.thDraft[emp.id] = { t, h, hSet: true };
+    ST.thDraft[emp.id] = { t, h, hSet: true, f: { hol: $("#thfh").value, wfh: $("#thfw").value } };
   };
   refresh();
   if (emp) {
@@ -94,7 +99,7 @@ function teacherHours() {
   /* ---------- save (every teacher edited in this visit) ---------- */
   if ($("#ths")) $("#ths").onclick = async () => {
     stash();
-    const hrs = { ...(D.teacherHrs || {}) }, tms = { ...(D.teacherDayTimes || {}) };
+    const hrs = { ...(D.teacherHrs || {}) }, tms = { ...(D.teacherDayTimes || {}) }, fxd = { ...(D.teacherFixed || {}) };
     Object.entries(ST.thDraft).forEach(([id, dr]) => {
       const h = { ...((hrs[id] || {}).h || {}) }, t = { ...(tms[id] || {}) };   // days hidden by Work days (Settings) keep what was saved
       Object.entries(dr.t || {}).forEach(([n, v]) => {
@@ -104,10 +109,11 @@ function teacherHours() {
         else if (full) h[n] = Math.round(thSpanHrs(v.start, v.end, D.lunchMin) * 100) / 100;
         else delete h[n];
       });
+      if (dr.f) { const f = {}; ["hol", "wfh"].forEach((k) => { if (dr.f[k] !== "" && dr.f[k] !== undefined && !isNaN(+dr.f[k]) && +dr.f[k] >= 0) f[k] = +dr.f[k]; }); if (Object.keys(f).length) fxd[id] = f; else delete fxd[id]; }
       if (Object.keys(h).length) hrs[id] = { h }; else delete hrs[id];
       if (Object.keys(t).length) tms[id] = t; else delete tms[id];
     });
-    D.teacherHrs = hrs; D.teacherDayTimes = tms; ST.thDraft = {};
+    D.teacherHrs = hrs; D.teacherDayTimes = tms; D.teacherFixed = fxd; ST.thDraft = {};
     if ($("#thm")) D.teacherHrMode = $("#thm").value;
     if ($("#thd")) D.teacherDefHrs = $("#thd").value === "" || isNaN(+$("#thd").value) ? 8 : Math.min(24, Math.max(0, +$("#thd").value));
     await api("saveSettings", S); toast("Teacher hours saved."); teacherHours();

@@ -25,11 +25,11 @@ var TABS = {
   Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active'],
   'Overtime File': ['ID', 'Employee ID', 'Employee No', 'Name', 'Date', 'Hours', 'Reason', 'Filed by', 'Filed at'],
   'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'],
-  'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks']   // one row per teacher per work day (written at every settings save)
+  'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks', 'Fixed holiday pay (per day)', 'Fixed WFH pay (per day)']   // one row per teacher per work day (written at every settings save)
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
 var ROLES = ['payroll', 'hr'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v7-2026-11-18b';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var SCHEMA_V = 'v8-2026-11-18c';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -89,6 +89,7 @@ function ensureSchema_(ss) {
       sh.getRange(1, 34).setValue('Photo').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');
     }
     if (n === 'Overtime File') [1, 2, 3, 5, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
+    if (n === 'Teacher Hours' && sh.getRange(1, 9).getValue() !== 'Fixed holiday pay (per day)') sh.getRange(1, 9, 1, 2).setValues([['Fixed holiday pay (per day)', 'Fixed WFH pay (per day)']]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');   // older Teacher Hours tab: add the two fixed-pay columns
     if (n === 'Teacher Hours') [1, 5, 6].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Payslip Summary') [1, 2, 3, 5].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Employees') [2, 7, 13, 15, 16, 17, 18].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // numbers like SSS / TIN keep their zeros, dates stay as typed
@@ -122,7 +123,7 @@ function resetDefaultUser() {
   seedUser_(); return 'Default user reset: ' + DEFAULT_EMAIL + ' / ' + DEFAULT_PASS;
 }
 
-function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18b' }); }
+function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18c' }); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 function doPost(e) {
@@ -382,8 +383,8 @@ var TH_DAYN_ = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'F
 function fmt12_(t) { if (!t) return ''; var p = String(t).split(':'), h = +p[0], m = +p[1] || 0; return ((h + 11) % 12 + 1) + ':' + ('0' + m).slice(-2) + ' ' + (h < 12 ? 'AM' : 'PM'); }
 function spanHrs_(a, b, lunch) { var f = function (x) { var p = String(x).split(':'); return (+p[0]) * 60 + (+p[1] || 0); }, sp = f(b) - f(a); return sp <= 0 ? 0 : Math.max(0, sp - (sp > 300 ? lunch : 0)) / 60; }
 function thRows_(st, emps) {   // emps: [{id, no, name, dept}]
-  var D = (st && st.dtr) || {}, H = D.teacherHrs || {}, T = D.teacherDayTimes || {}, T1 = D.teacherTimes || {}, lunch = +D.lunchMin || 0, wk = (D.workDays && D.workDays.length) ? D.workDays : [1, 2, 3, 4, 5, 6], ids = {}, by = {}, rows = [];
-  [H, T, T1].forEach(function (o) { Object.keys(o).forEach(function (k) { ids[k] = 1; }); });
+  var D = (st && st.dtr) || {}, H = D.teacherHrs || {}, T = D.teacherDayTimes || {}, T1 = D.teacherTimes || {}, FX = D.teacherFixed || {}, lunch = +D.lunchMin || 0, wk = (D.workDays && D.workDays.length) ? D.workDays : [1, 2, 3, 4, 5, 6], ids = {}, by = {}, rows = [];
+  [H, T, T1, FX].forEach(function (o) { Object.keys(o).forEach(function (k) { ids[k] = 1; }); });
   emps.forEach(function (e) { by[String(e.id)] = e; });
   Object.keys(ids).map(function (k) { return by[k]; }).filter(function (e) { return e; }).sort(function (a, b) { return natCmp_(a.no, b.no); }).forEach(function (e) {
     var h = (H[e.id] || {}).h, hasH = !!h && Object.keys(h).length > 0, t1 = T1[e.id];
@@ -394,13 +395,13 @@ function thRows_(st, emps) {   // emps: [{id, no, name, dept}]
       else if (tm) { hrs = spanHrs_(tm.start, tm.end, lunch); rem = own ? 'Time in / out of this day' : 'Usual time of the teacher'; }
       else return;
       if (hrs === 0) tm = null;
-      rows.push([e.no, e.name, e.dept || '', TH_DAYN_[n], tm ? fmt12_(tm.start) : '', tm ? fmt12_(tm.end) : '', num_(hrs), rem]);
+      var fxv = FX[e.id] || {}; rows.push([e.no, e.name, e.dept || '', TH_DAYN_[n], tm ? fmt12_(tm.start) : '', tm ? fmt12_(tm.end) : '', num_(hrs), rem, fxv.hol === undefined || fxv.hol === '' ? '' : num_(fxv.hol), fxv.wfh === undefined || fxv.wfh === '' ? '' : num_(fxv.wfh)]);
     });
   });
   return rows;
 }
 function thPut_(ss, st) {   // rewrites the Teacher Hours tab of the database so it always matches the app
-  var sh = ss.getSheetByName('Teacher Hours'), Em = ss.getSheetByName('Employees'), last = Em.getLastRow(), emps = [], rows, w = 8, old = sh.getLastRow();
+  var sh = ss.getSheetByName('Teacher Hours'), Em = ss.getSheetByName('Employees'), last = Em.getLastRow(), emps = [], rows, w = 10, old = sh.getLastRow();
   if (last > 1) emps = Em.getRange(2, 1, last - 1, 11).getValues().map(function (r) { return { id: String(r[0]), no: txt_(r[1]), name: String(r[5] || ''), dept: String(r[10] || '') }; });
   rows = thRows_(st, emps);
   if (!rows.length && old <= 1) return;
