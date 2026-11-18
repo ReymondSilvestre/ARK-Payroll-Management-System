@@ -32,10 +32,26 @@ function slipHTML(s, run, sg, copy) {
   const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : "Basic pay", c.basic]];
   if ((c.allowList || []).length) c.allowList.forEach((a) => a.amount && E.push([(a.label || "Allowance") + (a.count !== undefined ? ` (${a.count} day${a.count === 1 ? "" : "s"} x ${P(a.daily)})` : ""), a.amount])); else if (c.allow) E.push(["Allowances", c.allow]);
   if (c.ot) E.push(["Overtime", c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.holPay) E.push([c.holFixed ? "Holiday pay (fixed)" : "Holiday pay", c.holPay]); if (c.wfhPay) E.push([c.perHour ? (c.wfhFixed ? "WFH / Async class pay (fixed per day)" : "WFH / Async class pay (per hour)") : "WFH / Async class pay (per day)", c.wfhPay]);
-  const D = []; if (c.absent) D.push(["Absences", c.absent]); if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHM(c.lateMin) + ")" : ""), c.late]); if (c.holDed) D.push(["Holiday deduction", c.holDed]); if (c.wfhDed) D.push(["WFH / Async deduction", c.wfhDed]);
-  D.push(["SSS", c.sssEe], ["PhilHealth", c.phicEe], ["Pag-IBIG", c.hdmfEe], ["Withholding tax", c.tax]); if (c.other) D.push(["Loans / other", c.other]); if (c.caDed) D.push(["Cash advance", c.caDed]);
+  /* DEDUCTIONS: every line says WHAT it is for (D = [label, amount, reason]) */
+  const W = c.why || {}, fd = (d) => { const x = new Date(String(d).slice(0, 10) + "T12:00"); return isNaN(x) ? String(d) : x.toLocaleDateString("en-US", { month: "short", day: "numeric" }); }, dl = (arr, f, max) => { const a = (arr || []).map(f); return a.slice(0, max || 8).join(", ") + (a.length > (max || 8) ? ` +${a.length - (max || 8)} more` : ""); };
+  const D = [];
+  if (c.absent) { const lvD = +c.leaveDays || 0, abD = Math.max(0, r2((c.absentDays || 0) - lvD)), parts = [];
+    if (abD > 0) parts.push(`${abD} day${abD === 1 ? "" : "s"} absent` + (Array.isArray(W.absentList) && W.absentList.length ? ": " + dl(W.absentList, (x) => `${fd(x.d)} (${x.why})`) : " (entered by payroll)"));
+    if (lvD > 0) parts.push(`${lvD} day${lvD === 1 ? "" : "s"} leave without pay` + ((W.leaveList || []).length ? ": " + dl(W.leaveList, (x) => `${x.type || "Leave"} ${fd(x.from)}${x.to !== x.from ? " - " + fd(x.to) : ""}`) : ""));
+    D.push([lvD > 0 ? "Absences / unpaid leave" : "Absences", c.absent, parts.join("; ") + ` x ${P(c.dailyRate)} per day`]); }
+  if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHM(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${x.min} min`) : "Late minutes entered by payroll") + `; ${fmtHM(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
+  (W.holDedList || []).length ? D.push(["Holiday deduction", c.holDed, W.holDedList.map((h) => `${h.label || fd(h.date)} (${fd(h.date)}): paid at ${h.pct}% of the day`).join("; ")]) : c.holDed ? D.push(["Holiday deduction", c.holDed, "Holiday paid below 100% of the day (Settings)"]) : 0;
+  (W.wfhDedList || []).length ? D.push(["WFH / Async deduction", c.wfhDed, W.wfhDedList.map((h) => `${fd(h.date)}${h.label ? " " + h.label : ""}: ${h.pct ? "paid at " + h.pct + "%" : "day without pay"}`).join("; ")]) : c.wfhDed ? D.push(["WFH / Async deduction", c.wfhDed, "WFH / asynchronous day paid below 100%"]) : 0;
+  const timing = (w) => (!W.semi ? "" : w === "first" ? "; taken in the 1st cut-off" : w === "second" ? "; taken in the 2nd cut-off" : "; half in each cut-off"), gov = (nm, v, w, man) => D.push([nm, v, man ? "Amount set by payroll for this run" : v > 0 ? "Required contribution, employee share" + timing(w) : W.semi ? "Taken in the other cut-off" : "Not deducted"]);
+  gov("SSS", c.sssEe, W.sssWhen, W.manualSss); gov("PhilHealth", c.phicEe, W.phicWhen, W.manualPhic); gov("Pag-IBIG", c.hdmfEe, W.hdmfWhen, W.manualHdmf);
+  D.push(["Withholding tax", c.tax, W.manualTax ? "Amount set by payroll for this run" : W.taxWhy === "fixed" ? "Fixed tax amount set for this employee" : W.taxWhy === "mwe" ? "Minimum wage earner: no income tax" : c.tax > 0 ? "Tax on compensation (BIR table)" : "No tax due"]);
+  (c.dedList || []).filter((d) => d.amount > 0).forEach((d) => D.push([[d.type, d.label].filter(Boolean).join(": ") || "Loan", d.amount, d.balanceBefore !== null && d.balanceBefore !== undefined ? `Loan payment; balance ${P(d.balanceBefore)} to ${P(d.balanceAfter)}` : "Loan / recurring deduction"]));
+  if (c.otherDed) D.push(["Other deduction", c.otherDed, W.otherDedNote || "Reason not stated"]);
+  if (!(c.dedList || []).length && !c.otherDed && c.other) D.push(["Loans / other", c.other, "Loans / other deductions"]);
+  if (c.caDed) D.push(["Cash advance", c.caDed, `Repayment; balance ${P(c.caBal)} to ${P(c.caAfter)}`]);
+  const ci = c.classInfo, clsNote = ci ? `Class check: scheduled ${fmtHMc(ci.schedMin)} hrs, taught ${fmtHMc(ci.mins)} hrs${ci.lateMin ? `, ${fmtHM(ci.lateMin)} late (not paid)` : ""}${ci.absent ? `, ${ci.absent} class${ci.absent === 1 ? "" : "es"} absent (not paid)` : ""}${ci.noRecord ? `, ${ci.noRecord} class${ci.noRecord === 1 ? "" : "es"} with no class check (not paid)` : ""}. Teachers are paid only for the hours taught, so these are not deductions.` : "";
   const n = Math.max(E.length, D.length, 6); let body = "";
-  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="4">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="4">${b ? esc(b[0]) : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
+  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[2] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[2])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
   const RL = c.perHour ? ["Rate per hour", "Hours taught (H:MM)", "Days present", "Days absent", "No. of holidays", "Overtime"] : ["Rate per day", "Paid days", "Days present", "Days absent", "No. of holidays", "Overtime"];
   const pres = c.presentDays === null || c.presentDays === undefined ? "-" : c.presentDays;
   const RV = c.perHour ? [P(c.rate), fmtHMc(Math.round(c.hours * 60)), pres, "-", c.holidays || 0, fmtHMd(c.otHours * 60)] : [P(c.dailyRate), c.paidDays, pres, c.absentDays, c.holidays || 0, fmtHMd(c.otHours * 60)];
@@ -47,9 +63,10 @@ function slipHTML(s, run, sg, copy) {
   <tr>${cell("SSS No.", dash(e.sssNo), 3)}${cell("PhilHealth No.", dash(e.philhealthNo), 3)}${cell("Pag-IBIG No.", dash(e.pagibigNo), 3)}${cell("TIN", dash(e.tin), 3)}</tr>
   <tr>${RL.map((x) => `<th colspan="2">${x}</th>`).join("")}</tr>
   <tr>${RV.map((x) => `<td colspan="2" class="c">${x}</td>`).join("")}</tr>
-  <tr><th colspan="4">EARNINGS</th><th colspan="2">Amount</th><th colspan="4">DEDUCTIONS</th><th colspan="2">Amount</th></tr>${body}
-  <tr class="tot"><td colspan="4">GROSS PAY</td><td colspan="2" class="n">${P(c.gross)}</td><td colspan="4">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed)}</td></tr></table>
+  <tr><th colspan="3">EARNINGS</th><th colspan="2">Amount</th><th colspan="5">DEDUCTIONS (and what each is for)</th><th colspan="2">Amount</th></tr>${body}
+  <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed)}</td></tr></table>
   ${(c.caBal > 0 || c.caDed > 0) ? `<table class="ca"><tr><th colspan="12">CASH ADVANCE BALANCE</th></tr><tr>${cell("Balance before this pay", P(c.caBal), 4)}${cell("Deducted this pay", P(c.caDed), 4)}${cell("Remaining balance", P(c.caAfter), 4)}</tr></table>` : ""}
+  ${clsNote ? `<div class="dr" style="text-align:left;margin:3px 0">${esc(clsNote)}</div>` : ""}
   <div class="net">NET PAY: ${P(c.net)}</div>
   <div class="sg"><div>Received by<i>Employee</i></div>${sg.map((g) => `<div><b>${esc(g.name || "")}</b><br>${esc(g.position || "")}<i>${esc(g.label || "")}</i></div>`).join("")}</div>
   <div class="dr">${run.status === "Draft" ? "DRAFT - not final. " : ""}Generated ${new Date().toLocaleString("en-US")}</div></div>`;

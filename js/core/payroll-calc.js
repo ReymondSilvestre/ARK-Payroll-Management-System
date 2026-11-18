@@ -110,12 +110,13 @@ function computeSlip(info, inp, S, period) {
   const mc = monthlyContrib(monthly, info, S);
   const share = (v, when) => { const t = when || S.contribTiming; return !semi ? v : t === "split" ? r2(v / 2) : (t === "first") === (period.half === "first") ? v : 0; };   // which cut-off takes the contribution (chosen per benefit under Settings)
   const sssEe = share(mc.sssEe, S.sss.when), phicEe = share(mc.phicEe, S.phic.when), hdmfEe = share(mc.hdmfEe, S.hdmf.when), sssEr = share(mc.sssEr, S.sss.when), phicEr = share(mc.phicEr, S.phic.when), hdmfEr = share(mc.hdmfEr, S.hdmf.when);
-  let tax = 0;
+  let tax = 0, taxWhy = "";
   const fx = info.fixed || {}, has = (v) => v !== undefined && v !== null && v !== "" && !isNaN(+v) && +v >= 0;
-  if (has(fx.tax)) tax = r2(+fx.tax / div);
+  if (has(fx.tax)) { tax = r2(+fx.tax / div); taxWhy = "fixed"; }
   else if (info.tax !== false && S.tax.on) {
     const T = S.tax, mwe = T.mweExempt && (perHour ? minHourly(S) > 0 && rate <= minHourly(S) + 0.005 : minDaily(S, info) > 0 && daily <= minDaily(S, info) + 0.005);   // minimum wage earners pay no income tax (RA 9504)
-    if (!mwe) {
+    if (mwe) taxWhy = "mwe"; else {
+      taxWhy = "table";
       const monthlyAllow = T.includeAllowances === false ? 0 : (info.allowances || []).reduce((n, a) => n + (a.taxable === false ? 0 : allowMonthly(a, S)), 0);
       const contrib = T.afterContrib === false ? 0 : mc.sssEe + mc.phicEe + mc.hdmfEe;
       const taxableMonth = Math.max(0, monthly + monthlyAllow - contrib);
@@ -139,12 +140,12 @@ function computeSlip(info, inp, S, period) {
   const HS = S.holiday || DEFAULT_SETTINGS.holiday, hl = Array.isArray(i.hol) ? i.hol : [], pct = (t, k, def) => (t && t[k] !== undefined && t[k] !== "" && !isNaN(+t[k]) ? +t[k] : def);
   // teachers can have a FIXED amount instead of the per-hour pay: the teacher's own (Teacher Hours menu) first, then the school-wide one (Settings); blank = the per-hour rule
   const fxAmt = (v) => (v !== undefined && v !== null && v !== "" && !isNaN(+v) && +v >= 0 ? r2(+v) : null), TF = ((S.dtr || {}).teacherFixed || {})[info.id] || {}, GF = HS.tFixed || {};
-  let holPay = 0, holDed = 0, holFixed = false;
+  let holPay = 0, holDed = 0, holFixed = false; const holDedList = [], wfhDedList = [];
   for (const h of hl) {
     const sp = h.type === "special", T = sp ? HS.special : HS.regular, nw = pct(T, "notWorked", 100), wk = pct(T, "worked", sp ? 130 : 200);
     if (h.worked) { const f = perHour ? fxAmt(GF[sp ? "spWork" : "regWork"]) : null; if (f !== null) { holPay += f; holFixed = true; } else holPay += perHour ? (+h.hours || 0) * rate * (wk - 100) / 100 : daily * (wk - 100) / 100; }            // extra for working on the holiday (teachers: a fixed amount when one is set)
     else if (perHour) { if (HS.teachersPaid !== false) { const f = fxAmt(TF.hol) ?? fxAmt(GF[sp ? "spNot" : "regNot"]); if (f !== null) { holPay += f; holFixed = true; } else holPay += (h.sched !== undefined && h.sched !== null ? +h.sched : S.hoursPerDay) * rate * nw / 100; } }                    // teachers: a holiday not worked is paid at this % of a day
-    else { const x = daily * (nw - 100) / 100; if (x < 0) holDed -= x; else holPay += x; }                           // fixed pay: already in the monthly pay; below 100% = deducted
+    else { const x = daily * (nw - 100) / 100; if (x < 0) { holDed -= x; holDedList.push({ date: h.date, label: h.label || "", type: h.type || "regular", pct: nw, amount: r2(-x) }); } else holPay += x; }                           // fixed pay: already in the monthly pay; below 100% = deducted
   }
   holPay = r2(holPay); holDed = r2(holDed);
   // work from home / asynchronous class days of the period (inp.wfh: [{ date, label, type, hours, worked }]): staff per day, teachers per hour, with pay
@@ -159,13 +160,16 @@ function computeSlip(info, inp, S, period) {
         wfhPay += WS.teacherBasis === "minday" ? (+(S.minWage && S.minWage.daily) || 0) * pc : hrs * (WS.teacherBasis === "minhour" ? mh : rate) * pc;
       }
     }   // teachers: per hour
-    else if (WS.staffPaid === false) wfhDed += daily;                                                                  // staff / admin: WFH without pay = the day is deducted
-    else { const x = daily * ((hasN(WS.staffPct) ? +WS.staffPct : 100) - 100) / 100; if (x < 0) wfhDed -= x; else wfhPay += x; }   // staff / admin: per day, % of the daily rate
+    else if (WS.staffPaid === false) { wfhDed += daily; wfhDedList.push({ date: w.date, label: w.label || "", pct: 0, amount: r2(daily) }); }                                                                  // staff / admin: WFH without pay = the day is deducted
+    else { const pc2 = hasN(WS.staffPct) ? +WS.staffPct : 100, x = daily * (pc2 - 100) / 100; if (x < 0) { wfhDed -= x; wfhDedList.push({ date: w.date, label: w.label || "", pct: pc2, amount: r2(-x) }); } else wfhPay += x; }   // staff / admin: per day, % of the daily rate
   }
   wfhPay = r2(wfhPay); wfhDed = r2(wfhDed);
   const gross = r2(basic + allow + ot + otherEarn + holPay + wfhPay), totalDed = r2(absent + late + holDed + wfhDed + sssF + phicF + hdmfF + taxF + other + caDed), net = r2(gross - totalDed);
   return { cat: categoryOf(info), perHour, rate, hours, basic, allow, allowList, ot, otherEarn, gross, absent, late, sssEe: sssF, phicEe: phicF, hdmfEe: hdmfF, sssEr, phicEr, hdmfEr, tax: taxF, other, dedList, otherDed, caDed, caBal, caAfter, manual, auto: { sssEe, phicEe, hdmfEe, tax }, totalDed, net, absentDays, leaveDays: +i.leaveDays || 0,
     holidays: hl.length, holWorked: hl.filter((h) => h.worked).length, holPay, holDed, holFixed, wfhPay, wfhDed, wfhFixed, wfhDays: wl.length, wfhList: wl.map((w) => ({ date: w.date, label: w.label || "", type: w.type || "wfh", hours: hasN(w.hours) ? +w.hours : null, worked: !!w.worked })), holList: hl.map((h) => ({ date: h.date, label: h.label || "", type: h.type || "regular", worked: !!h.worked })),
-    dailyRate: perHour ? 0 : r2(daily), paidDays: r2((+S.workDays || 0) / div), otHours: r2(+i.otHours || 0), lateMin: r2(+i.lateMin || 0), presentDays: i.dtr && i.dtr.present !== undefined && i.dtr.present !== null ? +i.dtr.present : null };
+    dailyRate: perHour ? 0 : r2(daily), paidDays: r2((+S.workDays || 0) / div), otHours: r2(+i.otHours || 0), lateMin: r2(+i.lateMin || 0), presentDays: i.dtr && i.dtr.present !== undefined && i.dtr.present !== null ? +i.dtr.present : null,
+    /* WHY each deduction was made (printed on the payslip) */
+    why: { absentList: i.absentList || null, lateList: i.lateList || null, leaveList: i.leaveList || [], otherDedNote: String(i.otherDedNote || "").trim(), holDedList, wfhDedList, taxWhy, semi, half: period.half, sssWhen: S.sss.when, phicWhen: S.phic.when, hdmfWhen: S.hdmf.when, manualSss: manual.sss, manualPhic: manual.phic, manualHdmf: manual.hdmf, manualTax: manual.tax, absentTyped: i.absentList === null, lateTyped: i.lateList === null },
+    classInfo: i.classInfo || null };
 }
 
