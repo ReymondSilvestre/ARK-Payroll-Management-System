@@ -16,10 +16,10 @@ const isHR = () => !!(ST.user && ST.user.role === "hr");
 
 const HR_TABS = ["leave", "otf"];
 
-/** Class Monitor accounts (role "monitor") only see the Class Monitor menu. The server refuses every other request from them too. */
+/** Class Monitor accounts (role "monitor") only see the Class Monitor and DTR / Biometric (class check DTR) menus. The server refuses every other request from them too. */
 const isMon = () => !!(ST.user && ST.user.role === "monitor");
 
-const MON_TABS = ["cls"];
+const MON_TABS = ["cls", "dtr"];
 
 const visibleTabs = () => (isHR() ? TABS.filter((t) => HR_TABS.includes(t[0])) : isMon() ? TABS.filter((t) => MON_TABS.includes(t[0])) : TABS);
 

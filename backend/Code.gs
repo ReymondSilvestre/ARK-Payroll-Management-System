@@ -30,7 +30,7 @@ var TABS = {
   'Class Attendance': ['Date', 'Class ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Scheduled start', 'Scheduled end', 'Time in', 'Time out', 'Status', 'Remarks', 'Checked by', 'Checked at']   // what the Class Monitor recorded, one row per class per date
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
-var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave'];   // what a Class Monitor account may call: the class check and the class schedule, nothing else
+var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave', 'clsReport'];   // what a Class Monitor account may call: the class check, the class schedule and the class-check DTR, nothing else
 var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
 var SCHEMA_V = 'v9-2026-11-18d';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
@@ -296,7 +296,8 @@ function doPost(e) {
     } else if (A === 'clsMark') {                // the Class Monitor clocks a teacher in / out of one class: [{classId, in, out, status, remarks}]
       var today = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd'), dt = String(d.date || '');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return out_({ ok: false, error: 'Choose a date.' });
-      if (String(me.role) === 'monitor' && dt !== today) return out_({ ok: false, error: 'The Class Monitor can only record the classes of today.' });
+      var monMin = Utilities.formatDate(new Date(Date.now() - 31 * 86400000), 'Asia/Manila', 'yyyy-MM-dd');
+      if (String(me.role) === 'monitor' && (dt > today || dt < monMin)) return out_({ ok: false, error: 'The Class Monitor can record and edit the classes from the last 31 days up to today.' });
       var Ca = ss.getSheetByName('Class Attendance'), sched = {}, exist = {}, lastA = Ca.getLastRow(), nowT = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm'), fresh = [];
       rows_(ss.getSheetByName('Class Schedule')).forEach(function (r) { if (r.ID) sched[String(r.ID)] = r; });
       if (lastA > 1) Ca.getRange(2, 1, lastA - 1, 2).getDisplayValues().forEach(function (r, i) { if (r[0] === dt) exist[r[1]] = i + 2; });

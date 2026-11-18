@@ -336,7 +336,7 @@ function cuRead(buf) {
     if (/^e\.?g\.?/i.test(no) || /^e\.?g\.?/i.test(String(g("date")))) continue;
     if (!String(g("date")).trim() && !no && !nm) continue;
     const row = { line: i + 1, errors: [], warns: [], remarks: String(g("rm")).trim() }, date = cuParseDate(g("date"));
-    if (!date) row.errors.push(`Date not understood ("${g("date")}").`); else if (date > today) row.errors.push("The date is in the future."); else if (isMonitor() && date !== today) row.errors.push("The Class Monitor can only upload the classes of today."); row.date = date;
+    if (!date) row.errors.push(`Date not understood ("${g("date")}").`); else if (date > today) row.errors.push("The date is in the future."); else if (isMonitor() && date < cmYmd(new Date(Date.now() - 31 * 86400000))) row.errors.push("The Class Monitor can upload the last 31 days only."); row.date = date;
     let e = no ? byNo[no.toLowerCase()] : null; if (!e && nm) e = byName[cmNorm(nm)];
     if (!e) row.errors.push(`Teacher not found (${no || nm || "empty"}).`); else { row.emp = e; row.name = nameOf(e); }
     const stt = String(g("st")).trim().toLowerCase(); row.absent = /^abs/.test(stt);

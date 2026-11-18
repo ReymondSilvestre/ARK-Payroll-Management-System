@@ -4,6 +4,7 @@
    ============================================================ */
 
 function dtr(selNo) {
+  if (isMon() || ST.dtrView === "cdtr") return cdtrPage();   // the class-check DTR (the Class Monitor account only has this one)
   const D = ST.dtr, ids = Object.keys(D.days), dates = ids.flatMap((i) => Object.keys(D.days[i])).sort(), from = D.from || dates[0] || "", to = D.to || dates[dates.length - 1] || "", M = (ST._dm = null, dtrMap(), ST.dtrSel = selNo, dtrMap()), un = M.unmatched, list = ST.employees.filter((e) => M.byEmp[e.id]);
   const sel = list.find((e) => e.id === selNo);
   const lkOpts = (u) => { const bp = bioParts(u.name), cand = new Set((u.amb || []).map((e) => e.id)), sc = (e) => { const ep = empParts(e); return bp ? bp.all.filter((t) => [...ep.L, ...ep.F].some((x) => tokEq(t, x))).length : 0; }; return ST.employees.slice().sort((a, b) => (cand.has(b.id) - cand.has(a.id)) || (sc(b) - sc(a)) || nameOf(a).localeCompare(nameOf(b))).map((e) => `<option value="${e.id}">${esc(e.no)} - ${esc(nameOf(e))}</option>`).join(""); };
@@ -39,7 +40,7 @@ function dtr(selNo) {
 }
 
 /* ---------- DTR page sections: Biometric files | Attendance check | Use in payroll ---------- */
-const DTR_VIEWS = [["files", "Biometric files"], ["att", "Attendance check"], ["pay", "Use in payroll"]];
+const DTR_VIEWS = [["files", "Biometric files"], ["att", "Attendance check"], ["pay", "Use in payroll"], ["cdtr", "Class check DTR"]];
 
 const dtrView = (has) => ST.dtrView || (has ? "att" : "files");
 
@@ -47,5 +48,5 @@ const dpHide = (k, has) => (dtrView(has) === k ? "" : "hidden");
 
 const dtrTabs = (nUn, has) => `<div class="chips noprint" id="dtv">${DTR_VIEWS.map(([k, l]) => `<button data-dtv="${k}" class="${dtrView(has) === k ? "on" : ""}">${l}${k === "files" && nUn ? ` (${nUn} to link)` : ""}</button>`).join("")}</div>`;
 
-document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-dtv]"); if (!b) return; ST.dtrView = b.dataset.dtv; document.querySelectorAll("#dtv [data-dtv]").forEach((x) => x.classList.toggle("on", x === b)); document.querySelectorAll("[data-dp]").forEach((p) => p.hidden = p.dataset.dp !== ST.dtrView); });
+document.addEventListener("click", (ev) => { const b = ev.target.closest("[data-dtv]"); if (!b) return; const wasC = ST.dtrView === "cdtr"; ST.dtrView = b.dataset.dtv; if (wasC || ST.dtrView === "cdtr") return dtr(ST.dtrSel); document.querySelectorAll("#dtv [data-dtv]").forEach((x) => x.classList.toggle("on", x === b)); document.querySelectorAll("[data-dp]").forEach((p) => p.hidden = p.dataset.dp !== ST.dtrView); });
 
