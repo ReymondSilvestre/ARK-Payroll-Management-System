@@ -33,7 +33,7 @@ function allSheets(from, to) {
   ST.employees.forEach((e) => {
     const ca = e.ca || {}; if (+ca.balance > 0 || +ca.perPay > 0) adv.push([e.no, nameOf(e), e.dept || "", groupName(e), +ca.balance || 0, +ca.perPay || 0, today]);
     (e.deductions || []).forEach((d) => { const tr = d.balance !== undefined && d.balance !== "" && d.balance !== null, b = tr ? +d.balance || 0 : ""; loan.push([e.no, nameOf(e), e.dept || "", groupName(e), d.type || "", d.label || "", +d.amount || 0, b, tr ? (b > 0 ? "Active" : "Paid") : "No balance tracked", today]); });
-    (e.allowances || []).forEach((a) => { const amt = +a.amount || 0; alw.push([e.no, nameOf(e), e.dept || "", groupName(e), a.label || "", amt, a.perDay ? "Per day" : "Per month", allowMonthly(a, ST.settings), a.taxable === false ? "No" : "Yes", today]); });
+    (e.allowances || []).forEach((a) => { const amt = +a.amount || 0; alw.push([e.no, nameOf(e), e.dept || "", groupName(e), a.label || "", amt, isDowAllow(a) ? "Per day: " + dowLabel(a.days) : a.perDay ? "Per day" : "Per month", allowMonthly(a, ST.settings), a.taxable === false ? "No" : "Yes", today]); });
   });
   return [{ name: "Daily Attendance Logs", header: SHEET_H.logs, rows: logs, text: [0, 2, 6, 7] }, { name: "Summary of Attendance", header: SHEET_H.sum, rows: sum, text: [0, 4, 5, 6] },
     { name: "Cash Advances", header: SHEET_H.adv, rows: adv, text: [0, 6] }, { name: "Cash Loans", header: SHEET_H.loan, rows: loan, text: [0, 9] }, { name: "Allowances", header: SHEET_H.alw, rows: alw, text: [0, 9] }];

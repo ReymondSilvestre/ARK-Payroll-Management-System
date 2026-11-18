@@ -8,7 +8,24 @@
 function shiftsOfDept(e) { const dn = String(e.dept || "").trim().toLowerCase(); return dn ? (ST.settings.dtr.shifts || []).filter((s) => s.start && s.end && String(s.dept || "").trim().toLowerCase() === dn) : []; }
 
 /** Time in / out of one employee on one day. Order: the shift assigned to the employee > the only shift of the department > (several shifts, or "Automatic") the shift closest to the punches of that day > teachers' / department / default times. */
-function schedOf(e, p) {
+/** Department names match when they are the same, share all their words ("Accounting / Finance" = "Finance") or start the same way ("Administration" = "Administrative"). */
+function deptLike(a, b) {
+  a = String(a || "").trim().toLowerCase(); b = String(b || "").trim().toLowerCase(); if (!a || !b) return false; if (a === b) return true;
+  const wa = a.split(/[^a-z0-9]+/).filter(Boolean), wb = b.split(/[^a-z0-9]+/).filter(Boolean); if (!wa.length || !wb.length) return false;
+  if (wb.every((w) => wa.includes(w)) || wa.every((w) => wb.includes(w))) return true;
+  return wa.some((x) => wb.some((y) => x.length >= 7 && y.length >= 7 && x.slice(0, 7) === y.slice(0, 7)));
+}
+
+/** Saturday half day (Settings > Saturday half-day): the people of the chosen departments (or chosen one by one) work 8:00 AM - 12:00 noon on Saturday, and the day is still paid as ONE full day (the monthly pay already covers it, so nothing is deducted).
+    Overtime on such a Saturday starts at the "OT from" time (1:00 PM) and only when it is allowed that day. Returns null for everybody else. */
+function satHalfOf(e) {
+  const H = (ST.settings.dtr || {}).satHalf; if (!H || H.on === false || !e || categoryOf(e) === "teacher") return null;
+  const own = (H.people || {})[e.id]; let yes = own === "yes" ? true : own === "no" ? false : (H.depts || []).some((x) => deptLike(e.dept, x)); if (!yes) return null;
+  const m = (x, def) => { const [h, mi] = String(x || def).split(":").map(Number); return h * 60 + (mi || 0); };
+  return { start: H.start || "08:00", end: H.end || "12:00", otFromMin: m(H.otFrom, "13:00"), otAuto: H.otMode === "auto" };
+}
+
+function schedOf(e, p, dow) {
   const D = ST.settings.dtr, g = categoryOf(e), m = (x) => { const [h, mi] = String(x).split(":").map(Number); return h * 60 + (mi || 0); }; let st = D.start, en = D.end, shift = null;
   if (g === "teacher") { if (D.teacherStart) st = D.teacherStart; if (D.teacherEnd) en = D.teacherEnd; }
   else { const t = (D.deptTimes || {})[String(e.dept || "").trim().toLowerCase()]; if (t) { if (t.start) st = t.start; if (t.end) en = t.end; } }
@@ -24,8 +41,9 @@ function schedOf(e, p) {
     st = shift.start; en = shift.end;
   }
   if (g === "teacher") { const tt = (D.teacherTimes || {})[e.id]; if (tt && tt.start && tt.end) { st = tt.start; en = tt.end; } }   // Teacher Hours menu: this teacher's own time in / time out (e.g. 6:00 AM - 3:00 PM) wins over shifts and the teachers' default
+  const sat = dow === 6 ? satHalfOf(e) : null; if (sat) { st = sat.start; en = sat.end; }   // Saturday half day: 8:00 - 12:00 wins over shifts and department times
   const S0 = m(st), E0 = m(en);
-  return { st, en, S0, E0, MID: Math.round((S0 + E0) / 2), shift };
+  return { st, en, S0, E0, MID: Math.round((S0 + E0) / 2), shift, sat };
 }
 
 const ddRow = (n, t) => `<tr data-dd><td><input class="ddn" value="${esc(t.label || n || "")}"></td><td><input type="time" class="dds" value="${esc(t.start || "")}"></td><td><input type="time" class="dde" value="${esc(t.end || "")}"></td><td><button class="btn sm d" type="button" data-ddx>Remove</button></td></tr>`;

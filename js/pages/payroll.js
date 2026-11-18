@@ -16,7 +16,7 @@ function run() {
   const per = () => cutoffPeriod(R.month, R.cut);
   const eff = (e) => {
     const p = per(), i = { ...(R.inp[e.id] || {}) }, dt = (phEnsure(+p.start.slice(0, 4)), phEnsure(+p.end.slice(0, 4)), daysOf(e)) ? dtrCalc(e, p.start, p.end) : null, fill = (k, v) => { if (i[k] === undefined || i[k] === "") i[k] = v; };
-    if (dt) { fill("absentDays", dt.absent); fill("lateMin", showLate ? dt.late : 0); fill("otHours", dt.ot); fill("hoursWorked", Math.round(dt.hrsMin / 60 * 10000) / 10000); i.dtr = { present: dt.present }; }
+    if (dt) { fill("absentDays", dt.absent); fill("lateMin", showLate ? dt.late : 0); fill("otHours", dt.ot); fill("hoursWorked", Math.round(dt.hrsMin / 60 * 10000) / 10000); i.dtr = { present: dt.present }; i.presentDates = dt.presentDates; }
     const lv = lvInPeriod(e, p.start, p.end); i.leavePaid = lv.paid; if (S.unpaidLeave !== false && !isHourly(e)) i.leaveDays = lv.unpaid;
     i.hol = (S.dtr.holidays || []).filter((h) => h.date >= p.start && h.date <= p.end && (S.dtr.workDays || [1, 2, 3, 4, 5]).includes(new Date(h.date + "T12:00").getDay())).map((h) => { const r = dt && dt.rows.find((x) => x.d === h.date); return { date: h.date, label: h.label, type: h.type, worked: !!(r && r.inn !== null), hours: r ? r.hrs : 0, sched: tHrs(e, new Date(h.date + "T12:00").getDay()) }; });
     const holD = (S.dtr.holidays || []).map((h) => h.date);

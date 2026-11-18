@@ -11,13 +11,19 @@ const LOAN_TYPE_MAP = { "SSS Loan": "SSS Salary Loan", "Pag-IBIG Loan": "HDMF MP
 
 const loanTypeOpts = (cur) => (LOAN_TYPES.includes(cur) || !cur ? "" : `<option selected>${esc(cur)} (old type)</option>`) + LOAN_TYPES.map((t) => `<option ${cur === t ? "selected" : ""}>${t}</option>`).join("");
 
+/** The weekday boxes (and the "present only" box) of a weekday allowance row. */
+const dowPick = (a) => `<div class="dowp" style="margin-top:.45rem;display:flex;flex-wrap:wrap;gap:.25rem .8rem">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label style="display:inline-flex;gap:.25rem;align-items:center;font-weight:500;white-space:nowrap"><input type="checkbox" class="adw" value="${d}" ${(a.days || []).includes(d) ? "checked" : ""}>${DOW_SHORT[d]}</label>`).join("")}</div><label style="display:flex;gap:.3rem;align-items:center;font-weight:500;margin-top:.3rem"><input type="checkbox" class="apo" ${a.presentOnly !== false ? "checked" : ""}>Pay only on days present (DTR)</label>`;
+
 function loans(selId) {
   const E = ST.employees; if (!E.length) return V('<div class="card"><p class="muted">Add employees first.</p></div>');
   const M = ST.tab === "ca" ? "ca" : ST.tab === "allow" ? "allow" : "loan", e = E.find((x) => x.id === selId) || E[0]; let W = { ca: { ...(e.ca || {}) }, deductions: (e.deductions || []).map((x) => ({ ...x, type: LOAN_TYPE_MAP[x.type] || x.type })), allowances: (e.allowances || []).map((x) => ({ ...x })) };
   const collect = () => ({
     ca: M === "ca" ? { ...W.ca, perPay: +$("#cap").value || 0 } : W.ca,   // the outstanding balance is never typed: it only changes through Add cash advance and the payroll
     deductions: M === "loan" ? [...document.querySelectorAll("[data-ln]")].map((r) => ({ id: r.dataset.id, type: $(".lt", r).value.replace(/ \(old type\)$/, ""), label: $(".ll", r).value.trim() || $(".lt", r).value, amount: +$(".la", r).value || 0, balance: $(".lb", r).value === "" ? "" : +$(".lb", r).value })) : W.deductions,
-    allowances: M === "allow" ? [...document.querySelectorAll("[data-an]")].map((r) => ({ label: $(".al", r).value.trim(), amount: +$(".aa", r).value || 0, perDay: $(".ap", r).value === "1", taxable: $(".at", r).value === "1" })).filter((a) => a.label || a.amount) : W.allowances });
+    allowances: M === "allow" ? [...document.querySelectorAll("[data-an]")].map((r) => {
+      const m = $(".ap", r).value, o = { label: $(".al", r).value.trim(), amount: +$(".aa", r).value || 0, perDay: m === "1", taxable: $(".at", r).value === "1" };
+      if (m === "2") { const bx = r.querySelectorAll(".adw"); o.perDow = true; o.days = bx.length ? [...bx].filter((c) => c.checked).map((c) => +c.value) : [1, 2, 3, 4, 5]; o.presentOnly = bx.length ? $(".apo", r).checked : true; }   // chosen weekdays (a new one starts with Monday - Friday ticked)
+      return o; }).filter((a) => a.label || a.amount) : W.allowances });
   const draw = () => {
     const hist = (W.ca.history || []).slice().reverse(), today = new Date().toISOString().slice(0, 10);
     const caCard = `<div class="card"><h3>Cash advance</h3><div class="form"><div><label>Outstanding balance (\u20B1) - automatic</label><input type="text" id="cab" value="${money(+W.ca.balance || 0)}" readonly disabled style="font-weight:700"></div><div><label>Deduct each payday (\u20B1)</label><input type="number" step="any" id="cap" value="${W.ca.perPay ?? 0}"></div></div>
@@ -28,21 +34,22 @@ function loans(selId) {
     const loanCard = `<div class="card"><h3>Loans (Company Loan, SSS Salary / Calamity Loan, HDMF MPL / Calamity Loan)</h3><div class="tw"><table><tr><th>Type</th><th>Description</th><th>Amount per month</th><th>Outstanding balance</th><th></th></tr>
     ${W.deductions.map((d, i) => `<tr data-ln data-id="${esc(d.id || "L" + Date.now() + i)}"><td><select class="lt">${loanTypeOpts(d.type)}</select></td><td><input class="ll" value="${esc(d.label || "")}"></td><td><input class="in la" type="number" step="any" value="${d.amount ?? ""}"></td><td><input class="in lb" type="number" step="any" value="${d.balance ?? ""}" placeholder="no limit"></td><td><button class="btn sm d" data-rl="${i}">Remove</button></td></tr>`).join("") || '<tr><td colspan="5" class="muted">No loans.</td></tr>'}</table></div>
     <p class="muted">The monthly amount is split between the two cut-offs. When a balance is entered, the loan stops once it is fully paid.</p><p><button class="btn" id="al">+ Add loan</button></p></div>`;
-    const allowCard = `<div class="card"><h3>Allowances</h3><div class="tw"><table><tr><th>Name</th><th>Amount</th><th>Per</th><th>Taxable</th><th></th></tr>
-    ${W.allowances.map((a, i) => `<tr data-an><td><input class="al" value="${esc(a.label || "")}"></td><td><input class="in aa" type="number" step="any" value="${a.amount ?? ""}"></td><td><select class="ap"><option value="0">Month</option><option value="1" ${a.perDay ? "selected" : ""}>Working day</option></select></td><td><select class="at"><option value="1">Yes</option><option value="0" ${a.taxable === false ? "selected" : ""}>No</option></select></td><td><button class="btn sm d" data-ra="${i}">Remove</button></td></tr>`).join("") || '<tr><td colspan="5" class="muted">No allowances.</td></tr>'}</table></div><p><button class="btn" id="aa">+ Add allowance</button></p></div>`;
+    const allowCard = `<div class="card"><h3>Allowances</h3><div class="tw"><table><tr><th>Name</th><th>Amount (\u20B1)</th><th>Paid</th><th>Taxable</th><th></th></tr>
+    ${W.allowances.map((a, i) => `<tr data-an><td><input class="al" value="${esc(a.label || "")}"></td><td><input class="in aa" type="number" step="any" value="${a.amount ?? ""}"></td><td><select class="ap"><option value="0">Month</option><option value="1" ${a.perDay && !isDowAllow(a) ? "selected" : ""}>Working day (every work day)</option><option value="2" ${isDowAllow(a) ? "selected" : ""}>Selected days of the week</option></select>${isDowAllow(a) ? dowPick(a) : ""}</td><td><select class="at"><option value="1">Yes</option><option value="0" ${a.taxable === false ? "selected" : ""}>No</option></select></td><td><button class="btn sm d" data-ra="${i}">Remove</button></td></tr>`).join("") || '<tr><td colspan="5" class="muted">No allowances.</td></tr>'}</table></div><p class="muted">Month = a fixed monthly amount (split between the cut-offs). Working day = amount x the working days of a month. <b>Selected days of the week</b> = the amount is paid for each day you tick (for example Transportation: Mon, Wed, Fri = &#8369;100 a day). With "Pay only on days present" a day is paid only when the employee has a punch in the DTR; a day with no punch, a holiday or a leave day is not paid.</p><p><button class="btn" id="aa">+ Add allowance</button></p></div>`;
     V(`${loanHead(e, E)}${M === "ca" ? caCard : M === "loan" ? loanCard : allowCard}<p><button class="btn p" id="sl">Save ${M === "ca" ? "cash advance" : M === "loan" ? "loans" : "allowances"}</button></p>`);
     $("#lq").onkeydown = (ev) => { if (ev.key === "Enter") { const m = loanSug($("#lq").value); if (m.length) { ev.preventDefault(); ST.loanQ = ""; loans(m[0].id); } } else if (ev.key === "Escape") $("#lsug").hidden = true; };
     if ($("#al")) $("#al").onclick = () => { W = collect(); W.deductions.push({ id: "L" + Date.now(), type: "Company Loan", label: "", amount: "", balance: "" }); draw(); };
     if ($("#aa")) $("#aa").onclick = () => { W = collect(); W.allowances.push({ label: "", amount: "", perDay: false, taxable: true }); draw(); };
     document.querySelectorAll("[data-rl]").forEach((b) => b.onclick = () => { W = collect(); W.deductions.splice(+b.dataset.rl, 1); draw(); });
     document.querySelectorAll("[data-ra]").forEach((b) => b.onclick = () => { W = collect(); W.allowances.splice(+b.dataset.ra, 1); draw(); });
+    document.querySelectorAll("[data-an] .ap").forEach((s) => s.onchange = () => { W = collect(); draw(); });   // choosing "Selected days of the week" shows the weekday boxes
     if ($("#ca_add")) $("#ca_add").onclick = async () => {
       const amt = r2($("#ca_amt").value); if (!(amt > 0)) return toast("Enter the cash advance amount.", true);
       const c = collect().ca, h = [...(c.history || []), { id: "C" + Date.now(), date: $("#ca_date").value || new Date().toISOString().slice(0, 10), amount: amt, note: $("#ca_note").value.trim() }];
       e.ca = { ...c, balance: r2((+c.balance || 0) + amt), history: h };
       const r = await api("saveEmployees", { list: [e] }); applyEmps(r); toast("Cash advance added. New balance " + money(e.ca.balance) + "."); loans(e.id);
     };
-    $("#sl").onclick = async () => { Object.assign(e, collect()); const r = await api("saveEmployees", { list: [e] }); applyEmps(r); toast("Saved."); loans(e.id); };
+    $("#sl").onclick = async () => { const nd = collect().allowances.find((a) => isDowAllow(a) && !a.days.length); if (nd) return toast("Tick at least one weekday for \"" + (nd.label || "allowance") + "\".", true); Object.assign(e, collect()); const r = await api("saveEmployees", { list: [e] }); applyEmps(r); toast("Saved."); loans(e.id); };
   };
   draw();
 }

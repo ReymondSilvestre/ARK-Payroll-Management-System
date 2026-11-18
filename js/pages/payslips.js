@@ -30,7 +30,7 @@ function slipHTML(s, run, sg, copy) {
   const hpd = +(ST.settings && ST.settings.hoursPerDay) || 8, rate = c.perHour ? c.rate : (c.dailyRate ? c.dailyRate / hpd : 0);
   let pd = run.payDate || ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(pd)); pd = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(pd); pd = isNaN(pd) ? esc(run.payDate || "-") : pd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : "Basic pay", c.basic]];
-  if ((c.allowList || []).length) c.allowList.forEach((a) => a.amount && E.push([a.label || "Allowance", a.amount])); else if (c.allow) E.push(["Allowances", c.allow]);
+  if ((c.allowList || []).length) c.allowList.forEach((a) => a.amount && E.push([(a.label || "Allowance") + (a.count !== undefined ? ` (${a.count} day${a.count === 1 ? "" : "s"} x ${P(a.daily)})` : ""), a.amount])); else if (c.allow) E.push(["Allowances", c.allow]);
   if (c.ot) E.push(["Overtime", c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.holPay) E.push(["Holiday pay", c.holPay]); if (c.wfhPay) E.push([c.perHour ? "WFH / Async class pay (per hour)" : "WFH / Async class pay (per day)", c.wfhPay]);
   const D = []; if (c.absent) D.push(["Absences", c.absent]); if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHM(c.lateMin) + ")" : ""), c.late]); if (c.holDed) D.push(["Holiday deduction", c.holDed]); if (c.wfhDed) D.push(["WFH / Async deduction", c.wfhDed]);
   D.push(["SSS", c.sssEe], ["PhilHealth", c.phicEe], ["Pag-IBIG", c.hdmfEe], ["Withholding tax", c.tax]); if (c.other) D.push(["Loans / other", c.other]); if (c.caDed) D.push(["Cash advance", c.caDed]);

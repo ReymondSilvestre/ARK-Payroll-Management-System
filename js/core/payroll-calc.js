@@ -16,7 +16,27 @@ const dailyRateOf = (info, S) => { const w = +(S && S.workDays) || 22, d = info 
 const monthlyBasicOf = (info, S) => { const w = +(S && S.workDays) || 22, own = info && +info.dailyRate > 0 ? r2(+info.dailyRate * w) : +(info && info.basicMonthly) || 0; return isHourly(info) ? own : Math.max(own, r2(minDaily(S, info) * w)); };
 
 /** Monthly amount of one allowance: a daily allowance (perDay) x working days a month; an older allowance is already a monthly amount. */
-const allowMonthly = (a, S) => (a && a.perDay ? r2((+a.amount || 0) * (+(S && S.workDays) || 22)) : +(a && a.amount) || 0);
+const allowMonthly = (a, S) => (isDowAllow(a) ? r2((+a.amount || 0) * a.days.length * 52 / 12) : a && a.perDay ? r2((+a.amount || 0) * (+(S && S.workDays) || 22)) : +(a && a.amount) || 0);
+
+/** An allowance paid on chosen weekdays (e.g. transportation: Mon, Wed, Fri x 100 a day). a = { perDow: true, days: [1, 3, 5] (0 = Sunday ... 6 = Saturday), amount: per day, presentOnly }.
+    Monthly amount above is only an estimate (for the tax estimate and the lists): the pay itself counts the real days of the period. */
+function isDowAllow(a) { return !!(a && a.perDow === true && Array.isArray(a.days)); }
+
+const DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const dowLabel = (days) => [1, 2, 3, 4, 5, 6, 0].filter((d) => (days || []).includes(d)).map((d) => DOW_SHORT[d]).join(", ");
+
+/** The dates of the pay period on which a weekday allowance is paid. "Pay only on days present": only days with a punch in the DTR (i.presentDates); without DTR data, or when switched off, every matching weekday that is not a holiday. */
+function allowDaysIn(a, S, period, i) {
+  const out = [], days = a.days || [], pd = i && Array.isArray(i.presentDates) ? new Set(i.presentDates) : null, hol = new Set(((S.dtr && S.dtr.holidays) || []).map((h) => h.date));
+  if (!period || !period.start || !period.end) return out;
+  for (let d = new Date(period.start + "T12:00"), z = new Date(period.end + "T12:00"); d <= z; d.setDate(d.getDate() + 1)) {
+    if (!days.includes(d.getDay())) continue;
+    const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    if (a.presentOnly !== false && pd) { if (pd.has(k)) out.push(k); } else if (!hol.has(k)) out.push(k);
+  }
+  return out;
+}
 
 /** A per-hour employee (teachers are paid for the hours they teach, not a fixed daily pay). Saved choice first; without one, a position with teacher / instructor / professor is per hour. */
 const CATEGORIES = [{ key: "staff", label: "Employee staff", short: "Staff" }, { key: "teacher", label: "Teachers (paid per hour)", short: "Teachers" }, { key: "admin", label: "School admins", short: "School admins" }];
@@ -84,7 +104,7 @@ function computeSlip(info, inp, S, period) {
   const monthly = perHour || mB ? r2(basic * div) : baseMonthly;      // the monthly equivalent (used by the percent rates and the tax estimate)
   const daily = !perHour && !mB ? dailyRateOf(info, S) : monthly / S.workDays, hourly = perHour ? rate : daily / S.hoursPerDay;
   const absentDays = perHour ? 0 : (+i.absentDays || 0) + (+i.leaveDays || 0);
-  const allowList = (info.allowances || []).map((a) => ({ label: a.label, amount: r2(allowMonthly(a, S) / div), perDay: !!a.perDay, daily: a.perDay ? r2(+a.amount || 0) : null })), allow = r2(allowList.reduce((n, a) => n + a.amount, 0));
+  const allowList = (info.allowances || []).map((a) => { if (isDowAllow(a)) { const dd = allowDaysIn(a, S, period, i); return { label: a.label, amount: r2((+a.amount || 0) * dd.length), perDay: true, daily: r2(+a.amount || 0), count: dd.length, dowLabel: dowLabel(a.days) }; } return { label: a.label, amount: r2(allowMonthly(a, S) / div), perDay: !!a.perDay, daily: a.perDay ? r2(+a.amount || 0) : null }; }), allow = r2(allowList.reduce((n, a) => n + a.amount, 0));
   const ot = r2((+i.otHours || 0) * hourly * S.otRate), otherEarn = r2(+i.otherEarn || 0);
   const absent = perHour ? 0 : r2(absentDays * daily), late = perHour ? 0 : r2((lateDeductMin(S, +i.lateMin || 0) / 60) * hourly);
   const mc = monthlyContrib(monthly, info, S);
