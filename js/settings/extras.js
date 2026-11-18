@@ -31,7 +31,7 @@ function collectExtras() {
   const S = ST.settings, v = (id) => $("#" + id).value;
   S.dtr.holidays = [...document.querySelectorAll("[data-hr]")].map((r) => ({ date: $(".hd", r).value, label: $(".hl", r).value.trim(), type: $(".ht", r).value })).filter((h) => h.date);
   S.dtr.wfhDays = [...document.querySelectorAll("[data-wr]")].map((r) => ({ date: $(".wd", r).value, label: $(".wl", r).value.trim(), type: $(".wt", r).value, hours: $(".wh", r).value === "" ? null : +$(".wh", r).value })).filter((h) => h.date);
-  S.wfh = { staffPaid: v("wf1") === "1", staffPct: isNaN(+v("wf2")) ? 100 : +v("wf2"), teachersPaid: v("wf3") === "1", teacherHours: isNaN(+v("wf4")) || v("wf4") === "" ? 8 : +v("wf4"), teacherPct: isNaN(+v("wf5")) ? 100 : +v("wf5") };
+  S.wfh = { staffPaid: v("wf1") === "1", staffPct: isNaN(+v("wf2")) ? 100 : +v("wf2"), teachersPaid: v("wf3") === "1", teacherBasis: v("wf6") || "rate", teacherHours: isNaN(+v("wf4")) || v("wf4") === "" ? 8 : +v("wf4"), teacherPct: isNaN(+v("wf5")) ? 100 : +v("wf5") };
   S.holiday = { regular: { notWorked: +v("hp1"), worked: +v("hp2") }, special: { notWorked: +v("hp3"), worked: +v("hp4") }, teachersPaid: v("hp5") === "1" };
   Object.assign(S.dtr, { start: v("dt1") || "08:00", end: v("dt2") || "17:00", teacherStart: v("dt1t") || "", teacherEnd: v("dt2t") || "", lunchMin: +v("dt3"), 
     workDays: [...document.querySelectorAll(".wdc")].filter((c) => c.checked).map((c) => +c.value), restDayAsOt: v("dt6") === "1", attOt: !!document.getElementById("dt10") && document.getElementById("dt10").checked, holPunch: !!document.getElementById("dt11") && document.getElementById("dt11").checked, noInRule: v("dt7"), noOutRule: v("dt8"), halfDayAbs: Math.min(1, Math.max(0, isNaN(+v("dt9")) ? 0.5 : +v("dt9"))), daysV: 2 });

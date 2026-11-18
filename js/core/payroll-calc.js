@@ -94,9 +94,14 @@ function computeSlip(info, inp, S, period) {
   const fx = info.fixed || {}, has = (v) => v !== undefined && v !== null && v !== "" && !isNaN(+v) && +v >= 0;
   if (has(fx.tax)) tax = r2(+fx.tax / div);
   else if (info.tax !== false && S.tax.on) {
-    const monthlyAllow = (info.allowances || []).reduce((n, a) => n + (a.taxable === false ? 0 : allowMonthly(a, S)), 0);
-    const taxableYear = Math.max(0, (monthly + monthlyAllow - mc.sssEe - mc.phicEe - mc.hdmfEe) * 12);
-    tax = r2(yearlyTax(taxableYear, S.tax.brackets) / 12 / div);
+    const T = S.tax, mwe = T.mweExempt && (perHour ? minHourly(S) > 0 && rate <= minHourly(S) + 0.005 : minDaily(S, info) > 0 && daily <= minDaily(S, info) + 0.005);   // minimum wage earners pay no income tax (RA 9504)
+    if (!mwe) {
+      const monthlyAllow = T.includeAllowances === false ? 0 : (info.allowances || []).reduce((n, a) => n + (a.taxable === false ? 0 : allowMonthly(a, S)), 0);
+      const contrib = T.afterContrib === false ? 0 : mc.sssEe + mc.phicEe + mc.hdmfEe;
+      const taxableMonth = Math.max(0, monthly + monthlyAllow - contrib);
+      if (T.method === "flat") tax = r2(Math.max(0, taxableMonth - (+T.flatOver || 0)) * (+T.flatRate || 0) / 100 / div);
+      else tax = r2(yearlyTax(taxableMonth * 12, T.brackets) / 12 / div);
+    }
   }
   // amounts typed by hand for THIS payroll replace the automatic ones (government benefits and tax)
   const manual = { basic: mB, sss: has(i.mSss), phic: has(i.mPhic), hdmf: has(i.mHdmf), tax: has(i.mTax) };
@@ -125,7 +130,12 @@ function computeSlip(info, inp, S, period) {
   let wfhPay = 0, wfhDed = 0;
   for (const w of wl) {
     if (w.worked) continue;                                                                                           // punched in that day: the DTR already pays it
-    if (perHour) { if (WS.teachersPaid !== false) wfhPay += (hasN(w.hours) ? +w.hours : hasN(WS.teacherHours) ? +WS.teacherHours : S.hoursPerDay) * rate * (hasN(WS.teacherPct) ? +WS.teacherPct : 100) / 100; }   // teachers: per hour
+    if (perHour) {
+      if (WS.teachersPaid !== false) {
+        const hrs = hasN(w.hours) ? +w.hours : hasN(WS.teacherHours) ? +WS.teacherHours : S.hoursPerDay, pc = (hasN(WS.teacherPct) ? +WS.teacherPct : 100) / 100, mh = minHourly(S) || r2((+(S.minWage && S.minWage.daily) || 0) / (+S.hoursPerDay || 8));
+        wfhPay += WS.teacherBasis === "minday" ? (+(S.minWage && S.minWage.daily) || 0) * pc : hrs * (WS.teacherBasis === "minhour" ? mh : rate) * pc;
+      }
+    }   // teachers: per hour
     else if (WS.staffPaid === false) wfhDed += daily;                                                                  // staff / admin: WFH without pay = the day is deducted
     else { const x = daily * ((hasN(WS.staffPct) ? +WS.staffPct : 100) - 100) / 100; if (x < 0) wfhDed -= x; else wfhPay += x; }   // staff / admin: per day, % of the daily rate
   }
