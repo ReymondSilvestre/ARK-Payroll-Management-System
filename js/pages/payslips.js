@@ -8,14 +8,18 @@ async function slips() {
   const runs = ST.runs.slice().reverse(), byP = {}; runs.forEach((r) => (byP[r.period] ||= []).push(r));
   if (!runs.some((r) => r.id === ST.slipRun)) ST.slipRun = runs.length ? runs[0].id : "";
   const lab = (r) => `${(SECS.find((x) => x[0] === r.group) || [0, "All"])[1]}${r.status === "Draft" ? " [DRAFT]" : ""} (${r.id})`;
-  V(`<div class="card noprint"><div class="row"><div><label>Payroll run (per cut-off)</label><select id="sr">${Object.entries(byP).map(([p, L]) => `<optgroup label="${esc(p)}">${L.map((r) => `<option value="${esc(r.id)}" ${r.id === ST.slipRun ? "selected" : ""}>${esc(lab(r))}</option>`).join("")}</optgroup>`).join("") || '<option value="">No payroll saved yet</option>'}</select></div><button class="btn" id="pr">Print</button><button class="btn d" id="dr">Delete run</button></div><p class="muted">Choose a payroll run: its payslips are shown automatically below, one cut-off at a time.</p></div><div id="ps"></div>`);
+  V(`<div class="card noprint"><div class="row"><div><label>Payroll run (per cut-off)</label><select id="sr">${Object.entries(byP).map(([p, L]) => `<optgroup label="${esc(p)}">${L.map((r) => `<option value="${esc(r.id)}" ${r.id === ST.slipRun ? "selected" : ""}>${esc(lab(r))}</option>`).join("")}</optgroup>`).join("") || '<option value="">No payroll saved yet</option>'}</select></div><button class="btn" id="pr">Print</button><button class="btn" id="sm">${ST.slipMode === "sum" ? "Show payslips" : "Summary sheet"}</button><button class="btn" id="sx">Summary (Excel)</button><button class="btn d" id="dr">Delete run</button></div><p class="muted">Choose a payroll run: its payslips are shown automatically below, one cut-off at a time.</p></div><div id="ps"></div>`);
   const show = async () => {
     const id = $("#sr").value; ST.slipRun = id; if (!id) { $("#ps").innerHTML = ""; return; }
     const run = ST.runs.find((r) => r.id === id), L = await api("getRun", { id }), sg = ST.settings.signatories || [];
     if ($("#sr").value !== id) return;   // another run was chosen while loading
+    ST._slipL = L; ST._slipRunObj = run;
+    if (ST.slipMode === "sum") { $("#ps").innerHTML = sumHTML(L, run, sg); return; }
     $("#ps").innerHTML = (run.status === "Draft" ? '<div class="card noprint"><b style="color:#8a5a00">DRAFT</b> - this payroll is not final yet. Open the Payroll tab, press <b>Load saved draft</b> and then <b>Finalize</b>.</div>' : "") + L.map((s) => `<div class="slipset">${slipHTML(s, run, sg, "EMPLOYEE COPY")}<div class="cut">- - - - - - - - cut here - - - - - - - -</div>${slipHTML(s, run, sg, "FINANCE COPY")}</div>`).join("");
   };
   $("#sr").onchange = show;
+  $("#sm").onclick = () => { ST.slipMode = ST.slipMode === "sum" ? "slips" : "sum"; $("#sm").textContent = ST.slipMode === "sum" ? "Show payslips" : "Summary sheet"; show(); };
+  $("#sx").onclick = async () => { const id = $("#sr").value; if (!id) return toast("Choose a payroll run first.", true); const run = ST.runs.find((r) => r.id === id), L = ST._slipRunObj && ST._slipRunObj.id === id && ST._slipL ? ST._slipL : await api("getRun", { id }), R = sumRows(L); xlsxBook([{ name: "Payslip Summary", header: ["No.", "Employee No", "Employee name", "Salary (net pay)", "Signature"], rows: [...R.rows, ["", "", "TOTAL", R.total, ""]], text: [1] }], `Payslip-Summary-${String(run.period).replace(/[^\w-]+/g, "_")}-${run.group || "all"}.xlsx`); };
   $("#pr").onclick = () => print();
   $("#dr").onclick = async () => { const id = $("#sr").value; if (id && confirm("Delete this payroll run?")) { await api("deleteRun", { id }); ST.runs = ST.runs.filter((r) => r.id !== id); ST.slipRun = ""; slips(); } };
   if (ST.slipRun) show();
@@ -51,3 +55,17 @@ function slipHTML(s, run, sg, copy) {
   <div class="dr">${run.status === "Draft" ? "DRAFT - not final. " : ""}Generated ${new Date().toLocaleString("en-US")}</div></div>`;
 }
 
+
+/* ---------- Payslip summary (sign sheet): employee name, salary (net pay) and a Signature column, one page per payroll run ---------- */
+function sumRows(L) {
+  const rows = L.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map((s, i) => [i + 1, s.no, s.name, r2(s.calc.net), ""]);
+  return { rows, total: r2(rows.reduce((n, r) => n + r[3], 0)) };
+}
+
+function sumHTML(L, run, sg) {
+  const grp = (SECS.find((x) => x[0] === run.group) || [0, "All employees"])[1], R = sumRows(L), pd = String(run.payDate || "").slice(0, 10);
+  return `<div class="card sumsheet"><div class="hd"><img src="${LOGO}" alt=""><div><b>${esc(SCHOOL.name)}</b><small>${esc(SCHOOL.address)}<br>Contact: ${esc(SCHOOL.contact)}</small></div></div>
+  <h2>PAYSLIP SUMMARY</h2><p class="sper">${esc(grp)} &middot; ${esc(run.period)}${pd ? " &middot; Pay date " + esc(pd) : ""}${run.status === "Draft" ? " &middot; <b>DRAFT</b>" : ""}</p>
+  <div class="tw"><table class="sumt"><tr><th style="width:3.2rem">No.</th><th>Employee name</th><th class="n" style="width:10rem">Salary (net pay)</th><th style="width:16rem">Signature</th></tr>${R.rows.map((r) => `<tr><td>${r[0]}</td><td>${esc(r[2])}<br><small class="muted">${esc(r[1])}</small></td><td class="n">&#8369;${money(r[3])}</td><td class="sigc">&nbsp;</td></tr>`).join("") || '<tr><td colspan="4" class="muted">No payslips in this run.</td></tr>'}<tr class="tot"><td colspan="2">TOTAL (${R.rows.length} employee${R.rows.length === 1 ? "" : "s"})</td><td class="n">&#8369;${money(R.total)}</td><td></td></tr></table></div>
+  <div class="sg">${(sg || []).map((g) => `<div><b>${esc(g.name || "")}</b><br>${esc(g.position || "")}<i>${esc(g.label || "")}</i></div>`).join("")}</div></div>`;
+}

@@ -61,7 +61,7 @@ function run() {
     if (status === "Finalized") {   // only a finalized payroll lowers the cash advance and loan balances (a draft never does)
       const upd = []; L.forEach((e, i) => { const c = slips[i].calc; let ch = false; if (c.caDed > 0) { e.ca = { ...(e.ca || {}), balance: c.caAfter }; ch = true; } (c.dedList || []).forEach((d) => { const x = (e.deductions || []).find((y) => y.id === d.id); if (x && d.balanceAfter !== null && d.amount > 0) { x.balance = d.balanceAfter; ch = true; } }); if (ch) upd.push(e); }); if (upd.length) await api("saveEmployees", { list: upd });
     }
-    ST.runs = (await api("bootstrap")).runs;
+    ST.runs = r.runs || (await api("listRuns"));
     if (status === "Draft") { toast(`${secL} payroll saved as DRAFT. You can keep editing it and finalize later.`); run(); }
     else { ST.run = null; ST.tab = "slips"; ST.slipRun = r.id; toast(`${secL} payroll FINALIZED and saved to the spreadsheet.`); shell(); }
   };

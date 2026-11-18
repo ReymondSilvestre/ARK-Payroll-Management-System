@@ -29,6 +29,7 @@ function dtr(selNo) {
     $("#df").onchange = (e) => { D.from = e.target.value; dtr(selNo); }; $("#dto").onchange = (e) => { D.to = e.target.value; dtr(selNo); };
     $("#gp").onclick = () => { ST.tab = "run"; shell(); };
     if ($("#ld")) $("#ld").onchange = (e) => { ST.lateDate = e.target.value; dtr(selNo); };
+    if ($("#lg")) $("#lg").onchange = (e) => { ST.attG = e.target.value; ST.lateDate = ""; dtr(selNo); };
     if ($("#lf")) $("#lf").onchange = (e) => { ST.attF = e.target.value; ST.lateDate = ""; dtr(selNo); };
     if ($("#aq")) { $("#aq").oninput = (e) => { ST.attQ = e.target.value; attDraw(); }; attDraw(); }
     document.querySelectorAll("[data-dv]").forEach((b) => b.onclick = () => { ST.dtrEdit = false; ST.dtrView = "pay"; dtr(b.dataset.dv); });

@@ -16,7 +16,7 @@ function otfPage() { V(`<div class="card">${otFileHTML()}</div>`); otfInit(); }
 
 function otFileHTML() {
   const today = ymd(new Date()), emps = ST.employees.slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  return `<div><h3>Overtime file</h3><p class="muted">Record the overtime hours of each employee here. Hours filed for a date are paid as overtime for that date <b>and replace</b> whatever the biometric gave for that day, so nothing is counted twice. They are paid even if the person is not on the &ldquo;Who can take overtime&rdquo; list, and also when <a href="#" data-go="auto">Add overtime automatically</a> (Settings) is OFF.</p>
+  return `<div><h3>Overtime file</h3><p class="muted">Record the overtime hours of each employee here. Hours filed for a date are paid as overtime for that date <b>and replace</b> whatever the biometric gave for that day, so nothing is counted twice. They are paid even if the person is not on the &ldquo;Who can take overtime&rdquo; list, and also when ${isHR() ? "Add overtime automatically (Settings)" : '<a href="#" data-go="auto">Add overtime automatically</a> (Settings)'} is OFF.</p>
   <div class="otbox"><div class="form"><div><label>Employee</label><select id="of_e"><option value="">Choose employee...</option>${emps.map((e) => `<option value="${esc(e.id)}">${esc(e.no)} - ${esc(nameOf(e))}</option>`).join("")}</select></div>
   <div><label>Date</label><input type="date" id="of_d" value="${today}"></div><div><label>Overtime hours (1.5 or 1:30)</label><input id="of_h" inputmode="decimal" placeholder="e.g. 2"></div><div><label>Reason (optional)</label><input id="of_r" placeholder="e.g. Enrollment, event, make-up class"></div></div>
   <div class="row" style="margin-top:.7rem"><button type="button" class="btn p" id="of_add">Add overtime</button><span class="muted">or</span><div><input type="file" id="of_f" accept=".xlsx,.xls,.csv"></div></div>
@@ -25,7 +25,10 @@ function otFileHTML() {
   <div id="otf_body">${otfHTML()}</div></div>`;
 }
 
-async function otfSave(msg) { try { await api("saveSettings", ST.settings); if (msg) toast(msg); } catch (e) { } }
+/** The overtime file has its own tab in the database. Entries are added / removed on the server and the full list comes back, so two people (HR and payroll) filing at the same time never overwrite each other. */
+async function otfAdd(list, msg) { try { ST.settings.otFile = await api("otAdd", { list }); if (msg) toast(msg); } catch (e) { } otfRedraw(); }
+
+async function otfRemove(ids, msg) { try { ST.settings.otFile = await api("otRemove", { ids }); if (msg) toast(msg); } catch (e) { } otfRedraw(); }
 
 function otfRedraw() { const b = $("#otf_body"); if (b) b.innerHTML = otfHTML(); }
 
@@ -36,11 +39,12 @@ function otfInit() {
   $("#of_add").onclick = async () => {
     const id = $("#of_e").value, d = $("#of_d").value, h = parseHrs($("#of_h").value);
     if (!id) return toast("Choose the employee.", true); if (!d) return toast("Choose the date.", true); if (!(h > 0) || h > 24) return toast("Enter the overtime hours (more than 0, up to 24).", true);
-    (ST.settings.otFile ||= []).push({ id: "ot" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), empId: id, date: d, hours: Math.round(h * 10000) / 10000, reason: $("#of_r").value.trim() });
-    $("#of_h").value = ""; $("#of_r").value = ""; otfRedraw(); await otfSave("Overtime added to the file.");
+    const dup0 = (ST.settings.otFile || []).find((x) => x.empId === id && x.date === d);   // one entry per person and date: filing again changes it
+    const ent = { id: dup0 ? dup0.id : "ot" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), empId: id, date: d, hours: Math.round(h * 10000) / 10000, reason: $("#of_r").value.trim() };
+    $("#of_h").value = ""; $("#of_r").value = ""; await otfAdd([ent], dup0 ? "Overtime of that date changed." : "Overtime added to the file.");
   };
   $("#of_q").oninput = (e) => { ST.otfQ = e.target.value; otfRedraw(); };
-  $("#otf_body").onclick = async (e) => { const b = e.target.closest("[data-otx]"); if (!b) return; if (!confirm("Remove this overtime entry?")) return; ST.settings.otFile = (ST.settings.otFile || []).filter((x) => x.id !== b.dataset.otx); otfRedraw(); await otfSave("Entry removed."); };
+  $("#otf_body").onclick = async (e) => { const b = e.target.closest("[data-otx]"); if (!b) return; if (!confirm("Remove this overtime entry?")) return; await otfRemove([b.dataset.otx], "Entry removed."); };
   $("#of_f").onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return; ev.target.value = "";
     try {
@@ -49,15 +53,16 @@ function otfInit() {
       const hi = rows.findIndex((r) => r.some((x) => /hour|hrs/i.test(String(x))));
       if (hi >= 0) { start = hi + 1; const f2 = (re) => rows[hi].findIndex((x) => re.test(String(x).trim())); const no = f2(/^(emp(loyee)?\.?\s*)?(no|id|number|#)\.?$|emp.*(no|id)/i), dt = f2(/date/i), hr = f2(/hour|hrs/i), wy = f2(/reason|remark|note|purpose/i); c = { no: no >= 0 ? no : 0, date: dt >= 0 ? dt : 1, hrs: hr, why: wy }; }
       const toDate = (v) => { if (typeof v === "number") { const o = XLSX.SSF.parse_date_code(v); return o ? `${o.y}-${String(o.m).padStart(2, "0")}-${String(o.d).padStart(2, "0")}` : ""; } const t = String(v).trim(), m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/), u = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/); if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`; if (u) return `${u[3]}-${u[1].padStart(2, "0")}-${u[2].padStart(2, "0")}`; const d = new Date(t); return isNaN(d) ? "" : ymd(d); };
-      let ok = 0, bad = 0; const L = (ST.settings.otFile ||= []);
+      let ok = 0, bad = 0; const L = (ST.settings.otFile ||= []), send = new Map();
       for (const r of rows.slice(start)) {
         if (!r.some((x) => String(x).trim())) continue;
         const key = String(r[c.no] ?? "").trim(), e = ST.employees.find((x) => normNo(x.no) === normNo(key)) || ST.employees.find((x) => key && nameNorm(nameOf(x)) === nameNorm(key)), d = toDate(r[c.date]), h = parseHrs(r[c.hrs]);
         if (!e || !d || !(h > 0) || h > 24) { bad++; continue; }
-        const dup = L.find((x) => x.empId === e.id && x.date === d); if (dup) { dup.hours = h; if (c.why >= 0 && r[c.why]) dup.reason = String(r[c.why]); } else L.push({ id: "ot" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), empId: e.id, date: d, hours: h, reason: c.why >= 0 ? String(r[c.why] ?? "").trim() : "" });
+        const dup = L.find((x) => x.empId === e.id && x.date === d), dk = e.id + "|" + d, why = c.why >= 0 ? String(r[c.why] ?? "").trim() : "";
+        send.set(dk, dup ? { id: dup.id, empId: e.id, date: d, hours: h, reason: why || dup.reason || "" } : { id: "ot" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + send.size, empId: e.id, date: d, hours: h, reason: why });
         ok++;
       }
-      otfRedraw(); if (ok) await otfSave(`${ok} overtime entr${ok === 1 ? "y" : "ies"} saved${bad ? `, ${bad} row(s) skipped (employee, date or hours not recognised)` : ""}.`); else toast("No valid rows found. Use the columns Employee No, Date, Hours.", true);
+      if (ok) await otfAdd([...send.values()], `${ok} overtime entr${ok === 1 ? "y" : "ies"} saved${bad ? `, ${bad} row(s) skipped (employee, date or hours not recognised)` : ""}.`); else toast("No valid rows found. Use the columns Employee No, Date, Hours.", true);
     } catch (e) { toast("Could not read the file: " + e.message, true); }
   };
 }

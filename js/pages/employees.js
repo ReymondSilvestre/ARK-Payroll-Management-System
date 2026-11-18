@@ -48,7 +48,7 @@ function emp(edit) {
     const o = { ...e }; if (ST.photoDraft !== undefined) o.photo = ST.photoDraft; [...EF, ...GF, ...PF].forEach(([k]) => o[k] = $("#f_" + k).value.trim()); if (o.position === "__new__") o.position = ""; if (o.dept === "__new__") o.dept = "";
     ["sss", "philhealth", "pagibig", "tax"].forEach((k) => o[k] = $("#f_" + k).value === "1");
     for (const [k, l] of [["no", "Employee No."], ["last", "Last name"], ["first", "First name"], ["birthday", "Birthday"], ["status", "Status"]]) if (!o[k]) return toast(l + " is required.", true);
-    const r = await api("saveEmployees", { list: [o] }); ST.employees = r.employees; ST.empView = "list"; toast("Saved."); emp();
+    const r = await api("saveEmployees", { list: [o] }); applyEmps(r); ST.empView = "list"; toast("Saved."); emp();
   };
   if (edit) $("#cn").onclick = () => { ST.empView = "list"; emp(); };
   document.querySelectorAll("[data-e]").forEach((b) => b.onclick = () => { emp(ST.employees.find((x) => x.id === b.dataset.e)); scrollTo(0, 0); });
@@ -67,7 +67,7 @@ function emp(edit) {
       const old = ST.employees.find((x) => x.no === o.no); list.push(old ? { ...old, ...o } : o); });
     if (!list.length) return toast("No valid employees found. Employee No., Last name and First name are required.", true);
     if (!confirm(`Import ${list.length} employee(s)?${bad.length ? `\n${bad.length} row(s) skipped (missing Employee No./name): row ${bad.slice(0, 10).join(", ")}` : ""}`)) return;
-    const r = await api("saveEmployees", { list }); ST.employees = r.employees; ST.empView = "list"; toast(`${r.added} added, ${r.updated} updated.`); emp();
+    const r = await api("saveEmployees", { list }); applyEmps(r); ST.empView = "list"; toast(`${r.added} added, ${r.updated} updated.`); emp();
   };
 }
 

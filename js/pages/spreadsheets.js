@@ -5,8 +5,8 @@
 
 /* ===================== Spreadsheet sheets: attendance logs, summary, cash advances, cash loans ===================== */
 const SHEET_H = {
-  logs: ["Date", "Day", "Employee No", "Name", "Department", "Group", "Time in", "Time out", "Hours worked", "Late (min)", "Overtime (min)", "Status", "Remarks"],
-  sum: ["Employee No", "Name", "Department", "Group", "From", "To", "Schedule", "Days present", "Days absent", "Half days", "Late (days)", "Late (min)", "Overtime (hrs)", "Hours worked", "Overtime allowed"],
+  logs: ["Date", "Day", "Employee No", "Name", "Department", "Group", "Time in", "Time out", "Hours worked", "Late (min)", "Early in (min)", "Early out (min)", "Overtime (min)", "Status", "Remarks"],
+  sum: ["Employee No", "Name", "Department", "Group", "From", "To", "Schedule", "Days present", "Days absent", "Half days", "Late (days)", "Late (min)", "Early in (days)", "Early in (min)", "Early out (days)", "Overtime (hrs)", "Hours worked", "Overtime allowed"],
   adv: ["Employee No", "Name", "Department", "Group", "Outstanding balance", "Deduct each pay", "As of"],
   loan: ["Employee No", "Name", "Department", "Group", "Loan type", "Description", "Per month", "Balance", "Status", "As of"],
   alw: ["Employee No", "Name", "Department", "Group", "Allowance", "Amount", "Per", "Monthly amount", "Taxable", "As of"],
@@ -25,9 +25,9 @@ function allSheets(from, to) {
       c.rows.forEach((r) => {
         const has = r.inn !== null || r.out !== null; if (!has && !r.wd && !r.isH) return;
         const st = r.st === "absent" ? "Absent" : r.st === "half" ? "Half day" : r.leave ? "Leave" : r.isH && !has ? "Holiday" : r.isW && !has ? "WFH / Async" : r.late ? "Late" : has ? "Present" : "";
-        logs.push([r.d, new Date(r.d + "T12:00").toLocaleDateString("en-US", { weekday: "short" }), e.no, nameOf(e), e.dept || "", groupName(e), hm(r.inn), hm(r.out), Math.round(r.hrs * 100) / 100, r.late || 0, r.ot || 0, st, r.note || ""]);
+        logs.push([r.d, new Date(r.d + "T12:00").toLocaleDateString("en-US", { weekday: "short" }), e.no, nameOf(e), e.dept || "", groupName(e), hm(r.inn), hm(r.out), Math.round(r.hrs * 100) / 100, r.late || 0, r.early || 0, r.earlyOut || 0, r.ot || 0, st, r.note || ""]);
       });
-      sum.push([e.no, nameOf(e), e.dept || "", groupName(e), from, to, ([...c.scheds].join(" / ") || hm(sc.S0) + " - " + hm(sc.E0)), c.present, c.absent, c.half, c.lateDays, c.late, Math.round(c.ot * 100) / 100, c.hrs, otAllowed(e) ? "Yes" : "No"]);
+      sum.push([e.no, nameOf(e), e.dept || "", groupName(e), from, to, ([...c.scheds].join(" / ") || hm(sc.S0) + " - " + hm(sc.E0)), c.present, c.absent, c.half, c.lateDays, c.late, c.earlyDays, c.early, c.earlyOutDays, Math.round(c.ot * 100) / 100, c.hrs, otAllowed(e) ? "Yes" : "No"]);
     });
   }
   ST.employees.forEach((e) => {

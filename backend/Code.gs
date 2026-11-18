@@ -2,7 +2,7 @@
    PRIVATE DATABASE: the main database spreadsheet is never shown in the web app. Only the owner (the default account) can reveal it,
    and only after typing the database password (set it once inside the app: Users tab > Main database). Run lockDatabase() once from the editor
    so the file itself is private to your Google account.
-   BACKUP REPORT: a second, readable spreadsheet (EMPLOYEE, EMPLOYEE PAYSLIP, EMPLOYEE CASH ADVANCE RECORD, SSS, PHILHEALTH, PAGIBIG, TAX,
+   BACKUP REPORT: a second, readable spreadsheet (EMPLOYEE, EMPLOYEE PAYSLIP, PAYSLIP SUMMARY, EMPLOYEE CASH ADVANCE RECORD, SSS, PHILHEALTH, PAGIBIG, TAX,
    13TH MONTH JAN-JUN, 13TH MONTH JUL-DEC) is rebuilt from the database after every saved payroll, from Reports > Update backup report, and
    daily if you run installDailyBackup() once. */
 /* Deploy: Extensions > Apps Script > paste this file > Deploy > Manage deployments > Edit > New version > Web app
@@ -18,12 +18,17 @@ var TABS = {
   Payslips: ['Run ID', 'Period', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans/Other', 'Cash advance', 'Total deductions', 'Net pay', 'Detail (JSON)'],
   Settings: ['Key', 'Value'],
   Leaves: ['ID', 'Employee ID', 'Employee No', 'Name', 'Type', 'Paid', 'From', 'To', 'Days', 'Reason', 'Status', 'Filed by', 'Filed at'],
-  'Daily Attendance Logs': ['Date', 'Day', 'Employee No', 'Name', 'Department', 'Group', 'Time in', 'Time out', 'Hours worked', 'Late (min)', 'Overtime (min)', 'Status', 'Remarks'],
-  'Summary of Attendance': ['Employee No', 'Name', 'Department', 'Group', 'From', 'To', 'Schedule', 'Days present', 'Days absent', 'Half days', 'Late (days)', 'Late (min)', 'Overtime (hrs)', 'Hours worked', 'Overtime allowed'],
+  'Daily Attendance Logs': ['Date', 'Day', 'Employee No', 'Name', 'Department', 'Group', 'Time in', 'Time out', 'Hours worked', 'Late (min)', 'Early in (min)', 'Early out (min)', 'Overtime (min)', 'Status', 'Remarks'],
+  'Summary of Attendance': ['Employee No', 'Name', 'Department', 'Group', 'From', 'To', 'Schedule', 'Days present', 'Days absent', 'Half days', 'Late (days)', 'Late (min)', 'Early in (days)', 'Early in (min)', 'Early out (days)', 'Overtime (hrs)', 'Hours worked', 'Overtime allowed'],
   'Cash Advances': ['Employee No', 'Name', 'Department', 'Group', 'Outstanding balance', 'Deduct each pay', 'As of'],
   'Cash Loans': ['Employee No', 'Name', 'Department', 'Group', 'Loan type', 'Description', 'Per month', 'Balance', 'Status', 'As of'],
-  Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active']
+  Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active'],
+  'Overtime File': ['ID', 'Employee ID', 'Employee No', 'Name', 'Date', 'Hours', 'Reason', 'Filed by', 'Filed at'],
+  'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature']
 };
+var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
+var ROLES = ['payroll', 'hr'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
+var SCHEMA_V = 'v6-2026-11-18';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -36,7 +41,7 @@ function connectDatabase() {
   var m = String(MY_DATABASE_URL).match(/[-\w]{25,}/);
   if (!m) throw new Error('Paste your spreadsheet link into MY_DATABASE_URL (top of this function) first.');
   var ss = SpreadsheetApp.openById(m[0]);
-  PropertiesService.getScriptProperties().setProperty('DB_ID', m[0]);
+  PropertiesService.getScriptProperties().setProperty('DB_ID', m[0]); PropertiesService.getScriptProperties().deleteProperty('SCHEMA_V');
   db_(); resetDefaultUser();
   Logger.log('CONNECTED. The app now saves to: ' + ss.getUrl());
   return 'Connected: ' + ss.getUrl();
@@ -52,10 +57,18 @@ function lockDatabase() {
   return 'The database is now private. Only ' + f.getOwner().getEmail() + ' can open it.';
 }
 
+var SS_ = null;
+/* FAST: the spreadsheet is opened once per request, and the tabs / headers / formats are checked only when SCHEMA_V changes (before, every request re-checked every tab = many seconds). Run refreshSchema() to force the check. */
 function db_() {
+  if (SS_) return SS_;
   var props = PropertiesService.getScriptProperties(), id = props.getProperty('DB_ID'), ss = null;
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
-  if (!ss) { ss = SpreadsheetApp.create(DB_NAME); props.setProperty('DB_ID', ss.getId()); }
+  if (!ss) { ss = SpreadsheetApp.create(DB_NAME); props.setProperty('DB_ID', ss.getId()); props.deleteProperty('SCHEMA_V'); }
+  if (props.getProperty('SCHEMA_V') !== SCHEMA_V) { ensureSchema_(ss); props.setProperty('SCHEMA_V', SCHEMA_V); }
+  SS_ = ss; return ss;
+}
+function refreshSchema() { PropertiesService.getScriptProperties().deleteProperty('SCHEMA_V'); SS_ = null; db_(); return 'Tabs checked.'; }
+function ensureSchema_(ss) {
   var old = ss.getSheetByName('Employees');   // an Employees tab made by an older version has other columns: keep it as a backup and start a new one
   if (old && old.getRange(1, 3).getValue() !== 'Last name') old.setName('Employees (old ' + Utilities.formatDate(new Date(), 'Asia/Manila', 'MMdd-HHmm') + ')');
   var first = ss.getSheets()[0];
@@ -74,10 +87,11 @@ function db_() {
       if (sh.getMaxColumns() < 34) sh.insertColumnsAfter(sh.getMaxColumns(), 34 - sh.getMaxColumns());
       sh.getRange(1, 34).setValue('Photo').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');
     }
+    if (n === 'Overtime File') [1, 2, 3, 5, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
+    if (n === 'Payslip Summary') [1, 2, 3, 5].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Employees') [2, 7, 13, 15, 16, 17, 18].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // numbers like SSS / TIN keep their zeros, dates stay as typed
   });
-  return ss;
-}
+  }
 function rows_(sh) { var v = sh.getDataRange().getValues(), h = v.shift(); return v.map(function (r, i) { var o = { _row: i + 2 }; h.forEach(function (k, j) { o[k] = r[j]; }); return o; }); }
 function hash_(p, salt) { return 'h' + Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(salt) + ':' + String(p)).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join(''); }   // 'h' + hex: always text, never turned into a number or formula by Sheets
 function uid_() { return 'x' + Utilities.getUuid().replace(/-/g, '').slice(0, 8); }
@@ -106,13 +120,14 @@ function resetDefaultUser() {
   seedUser_(); return 'Default user reset: ' + DEFAULT_EMAIL + ' / ' + DEFAULT_PASS;
 }
 
-function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'backup-2026-11-14b' }); }
+function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18' }); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 function doPost(e) {
   var lock = LockService.getScriptLock(); lock.waitLock(25000);
   try {
-    var q = JSON.parse(e.postData.contents), ss = db_(); seedUser_(ss);
+    var q = JSON.parse(e.postData.contents), ss = db_(), props = PropertiesService.getScriptProperties();
+    if (!props.getProperty('SEEDED')) { seedUser_(); props.setProperty('SEEDED', '1'); }
     var cache = CacheService.getScriptCache();
     if (q.action === 'login') {
       var em0 = String(q.email || '').trim().toLowerCase(), u = users_().filter(function (x) { return String(x.Email).toLowerCase() === em0 && String(x.Active) !== 'no'; })[0];
@@ -123,56 +138,86 @@ function doPost(e) {
     }
     var s = cache.get('t_' + q.token); if (!s) return out_({ ok: false, error: 'unauthenticated' });
     var me = JSON.parse(s), A = q.action, d = q.data || {};
-    var Emp = ss.getSheetByName('Employees'), Run = ss.getSheetByName('Payroll Runs'), Sl = ss.getSheetByName('Payslips'), St = ss.getSheetByName('Settings');
+    if (cache.get('off_' + me.id)) return out_({ ok: false, error: 'unauthenticated' });   // account disabled or deleted: the session ends at once
+    var rr = cache.get('role_' + me.id); if (rr) me.role = rr;                                // role changed since sign-in
+    if (String(me.role) === 'hr' && HR_ACTIONS.indexOf(A) < 0) return out_({ ok: false, error: 'Your HR account can only use Leave and the Overtime File.' });
+    var Emp = ss.getSheetByName('Employees'), Run = ss.getSheetByName('Payroll Runs'), Sl = ss.getSheetByName('Payslips'), St = ss.getSheetByName('Settings'), Sm = ss.getSheetByName('Payslip Summary');
     var res = null;
 
     if (A === 'bootstrap') {
-      var set = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0];
-      res = { settings: set ? JSON.parse(set.Value) : null, employees: rows_(Emp).map(empOut_), runs: rows_(Run).map(function (r) { return { id: r['Run ID'], period: r.Period, payDate: r['Pay date'], count: r.Employees, gross: r.Gross, ded: r.Deductions, net: r['Net pay'], group: r.Group || '', status: r.Status || 'Finalized', by: r['Saved by'], at: r['Saved at'] }; }), leaves: rows_(ss.getSheetByName('Leaves')).filter(function (r) { return r.ID; }).map(lvOut_), backup: PropertiesService.getScriptProperties().getProperty('BK_URL') || '' };
+      var st0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0], setObj = null;
+      try { setObj = st0 ? JSON.parse(st0.Value) : null; } catch (e1) { setObj = null; }
+      var ot = otRows_(ss);
+      if (setObj && setObj.otFile !== undefined) {   // the overtime file used to live inside the settings: move it to its own tab once
+        if (!ot.length && setObj.otFile && setObj.otFile.length) { otPut_(ss, setObj.otFile, me.name); ot = otRows_(ss); }
+        delete setObj.otFile; St.getRange(st0._row, 2).setValue(JSON.stringify(setObj));
+      }
+      var lvs = rows_(ss.getSheetByName('Leaves')).filter(function (r) { return r.ID; }).map(lvOut_);
+      if (String(me.role) === 'hr') {   // HR sees only what Leave and the Overtime File need: no salaries, no government numbers, no payroll settings
+        var sOut = hrSettings_(setObj); sOut.otFile = ot;
+        res = { settings: sOut, employees: rows_(Emp).filter(function (r) { return r.ID; }).map(function (r) { var o = empOut_(r); return { id: o.id, no: o.no, last: o.last, first: o.first, mi: o.mi, name: o.name, position: o.position, dept: o.dept, etype: o.etype, status: o.status, category: o.category, photo: '' }; }), runs: [], leaves: lvs, backup: '' };
+      } else {
+        if (setObj) setObj.otFile = ot;
+        res = { settings: setObj, employees: rows_(Emp).map(empOut_), runs: runsOut_(Run), leaves: lvs, backup: props.getProperty('BK_URL') || '' };
+      }
+    } else if (A === 'listRuns') {
+      res = runsOut_(Run);
     } else if (A === 'saveSettings') {
+      delete d.otFile;   // the overtime file has its own tab (saved by otAdd / otRemove), so saving the settings can never wipe what HR filed
+      var json0 = JSON.stringify(d);
+      if (json0.length > 49000) return out_({ ok: false, error: 'The settings are too big for one spreadsheet cell (' + json0.length + ' characters). Remove old holidays or unused shifts.' });
       var r0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0];
-      if (r0) St.getRange(r0._row, 2).setValue(JSON.stringify(d)); else St.appendRow(['settings', JSON.stringify(d)]);
+      if (r0) St.getRange(r0._row, 2).setValue(json0); else St.appendRow(['settings', json0]);
       res = true;
-    } else if (A === 'saveEmployees') {           // add / edit / bulk upload: matched by Employee No, otherwise by last + first name
-      var cur = rows_(Emp), added = 0, updated = 0, low = function (v) { return String(v || '').trim().toLowerCase(); };
+    } else if (A === 'saveEmployees') {           // add / edit / bulk upload: matched by Employee No, otherwise by last + first name. One read and one write, photos are never read back.
+      var NC = 33, lastE = Emp.getLastRow(), blk = lastE > 1 ? Emp.getRange(2, 1, lastE - 1, NC).getValues() : [], added = 0, updated = 0, touched = [], fresh = [], photoSet = [], low = function (v) { return String(v || '').trim().toLowerCase(); };
       (d.list || []).forEach(function (x) {
-        var m = cur.filter(function (c) { return (x.no && String(c['Employee No']) === String(x.no)) || (!x.no && low(c['Last name']) === low(x.last) && low(c['First name']) === low(x.first)); })[0];
-        var ca = x.ca || {}, nm = (x.last || '') + ', ' + (x.first || '') + (x.mi ? ' ' + String(x.mi).replace(/\.?$/, '.') : '');
-        var row = [m ? m.ID : uid_(), x.no || '', x.last || '', x.first || '', x.mi || '', nm, x.birthday || '', x.gender || '', x.civil || '', x.position || '', x.dept || '', x.etype || '', x.hired || '', x.status || 'Active', x.sssNo || '', x.philhealthNo || '', x.pagibigNo || '', x.tin || '', x.category || '',
+        var mi = -1, i;
+        for (i = 0; i < blk.length; i++) { var c = blk[i]; if ((x.no && String(c[1]) === String(x.no)) || (!x.no && low(c[2]) === low(x.last) && low(c[3]) === low(x.first))) { mi = i; break; } }
+        var ca = x.ca || {}, nm = (x.last || '') + ', ' + (x.first || '') + (x.mi ? ' ' + String(x.mi).replace(/\.?$/, '.') : ''), eid = mi >= 0 ? blk[mi][0] : uid_();
+        var row = [eid, x.no || '', x.last || '', x.first || '', x.mi || '', nm, x.birthday || '', x.gender || '', x.civil || '', x.position || '', x.dept || '', x.etype || '', x.hired || '', x.status || 'Active', x.sssNo || '', x.philhealthNo || '', x.pagibigNo || '', x.tin || '', x.category || '',
           +x.basicMonthly || 0, +x.dailyRate || 0, +x.hourlyRate || 0, x.email || '', x.sss === false ? 'no' : 'yes', x.philhealth === false ? 'no' : 'yes', x.pagibig === false ? 'no' : 'yes', x.tax === false ? 'no' : 'yes',
-          +ca.balance || 0, +ca.perPay || 0, JSON.stringify(ca), JSON.stringify(x.allowances || []), JSON.stringify(x.deductions || []), new Date(), x.photo !== undefined ? String(x.photo || '') : (m ? String(m.Photo || '') : '')];
-        if (m) { Emp.getRange(m._row, 1, 1, row.length).setValues([row]); updated++; } else { Emp.appendRow(row); cur.push({ ID: row[0], 'Employee No': row[1], 'Last name': row[2], 'First name': row[3], _row: Emp.getLastRow() }); added++; }
+          +ca.balance || 0, +ca.perPay || 0, JSON.stringify(ca), JSON.stringify(x.allowances || []), JSON.stringify(x.deductions || []), new Date()];
+        var ph = x.photo !== undefined ? String(x.photo || '') : undefined;
+        if (mi >= 0) { blk[mi] = row; updated++; if (ph !== undefined) photoSet.push([mi + 2, ph]); }
+        else { fresh.push(row.concat([ph || ''])); blk.push(row); added++; }
+        touched.push({ id: eid, no: row[1], last: row[2], first: row[3], mi: row[4], name: nm, birthday: row[6], gender: row[7], civil: row[8], position: row[9], dept: row[10], etype: row[11], hired: row[12], status: row[13],
+          sssNo: row[14], philhealthNo: row[15], pagibigNo: row[16], tin: row[17], category: row[18], basicMonthly: row[19], dailyRate: row[20], hourlyRate: row[21], email: row[22], photo: ph,
+          sss: row[23] !== 'no', philhealth: row[24] !== 'no', pagibig: row[25] !== 'no', tax: row[26] !== 'no', ca: ca, allowances: x.allowances || [], deductions: x.deductions || [] });
       });
-      var allE = rows_(Emp).map(empOut_);
-      res = { added: added, updated: updated, employees: allE };
+      if (updated) Emp.getRange(2, 1, lastE - 1, NC).setValues(blk.slice(0, lastE - 1));   // all existing rows in ONE write
+      if (fresh.length) { var st1 = Emp.getLastRow() + 1; if (Emp.getMaxRows() < st1 + fresh.length) Emp.insertRowsAfter(Emp.getMaxRows(), st1 + fresh.length - Emp.getMaxRows()); Emp.getRange(st1, 1, fresh.length, NC + 1).setValues(fresh); }
+      photoSet.forEach(function (p) { Emp.getRange(p[0], 34).setValue(p[1]); });
+      res = { added: added, updated: updated, partial: true, employees: touched };   // only the saved people come back; the app merges them into its list (a full list with every photo made each save slow)
     } else if (A === 'deleteEmployee') {
       var e0 = rows_(Emp).filter(function (r) { return r.ID === d.id; })[0]; if (e0) Emp.deleteRow(e0._row); res = true;
     } else if (A === 'saveRun') {
-      var id = d.id || ('RUN-' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyyMMdd-HHmmss'));
-      var exR = rows_(Run).filter(function (r) { return r['Run ID'] === id; })[0];
-      if (exR && d.id && String(exR.Status || 'Finalized') !== 'Draft') return out_({ ok: false, error: 'This payroll run is already finalized and locked. Delete it first if it must be redone.' });
-      rows_(Run).filter(function (r) { return r['Run ID'] === id; }).forEach(function (r) { Run.deleteRow(r._row); });
-      rows_(Sl).filter(function (r) { return r['Run ID'] === id; }).reverse().forEach(function (r) { Sl.deleteRow(r._row); });
+      var id = d.id || ('RUN-' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyyMMdd-HHmmss') + '-' + uid_().slice(1, 4)), exG = groups_(Run, 1, id);
+      if (exG.length && d.id && String(Run.getRange(exG[0][0], 11).getValue() || 'Finalized') !== 'Draft') return out_({ ok: false, error: 'This payroll run is already finalized and locked. Delete it first if it must be redone.' });
+      delGroups_(Run, 1, id); delGroups_(Sl, 1, id); delGroups_(Sm, 1, id);   // a few block deletes (before: one deleteRow call per payslip)
       Run.appendRow([id, d.period, d.payDate, d.slips.length, d.gross, d.ded, d.net, me.name, new Date(), d.group || '', d.status === 'Draft' ? 'Draft' : 'Finalized']);
+      Run.getRange(Run.getLastRow(), 5, 1, 3).setNumberFormat('#,##0.00');
       var rowsOut = d.slips.map(function (p) { var c = p.calc; return [id, d.period, p.no, p.name, p.position, c.basic, c.allow, c.ot, (Number(c.otherEarn) || 0) + (Number(c.wfhPay) || 0), c.holPay, c.gross, (Number(c.absent) || 0) + (Number(c.wfhDed) || 0), c.late, c.sssEe, c.phicEe, c.hdmfEe, c.tax, c.other, c.caDed, c.totalDed, c.net, JSON.stringify(c)]; });
-      if (rowsOut.length) Sl.getRange(Sl.getLastRow() + 1, 1, rowsOut.length, rowsOut[0].length).setValues(rowsOut);
-      [5, 6, 7].forEach(function (n) { Run.getRange(2, n, Math.max(1, Run.getLastRow() - 1), 1).setNumberFormat('#,##0.00'); });
-      Sl.getRange(2, 6, Math.max(1, Sl.getLastRow() - 1), 16).setNumberFormat('#,##0.00');
-      res = { id: id };
-      try { updateBackup_(); } catch (bkErr) { }
+      if (rowsOut.length) { var s1 = Sl.getLastRow() + 1; if (Sl.getMaxRows() < s1 + rowsOut.length) Sl.insertRowsAfter(Sl.getMaxRows(), s1 + rowsOut.length - Sl.getMaxRows()); Sl.getRange(s1, 1, rowsOut.length, rowsOut[0].length).setValues(rowsOut); Sl.getRange(s1, 6, rowsOut.length, 16).setNumberFormat('#,##0.00'); }
+      // PAYSLIP SUMMARY (main database): employee name, salary (net pay) and a blank Signature column for each payslip of the run
+      var sumRows = d.slips.map(function (p) { return [id, String(d.period || ''), String(d.payDate || ''), grp_(d.group), String(p.no || ''), String(p.name || ''), num_(p.calc.net), '']; });
+      if (sumRows.length) { var s2 = Sm.getLastRow() + 1; if (Sm.getMaxRows() < s2 + sumRows.length) Sm.insertRowsAfter(Sm.getMaxRows(), s2 + sumRows.length - Sm.getMaxRows()); Sm.getRange(s2, 1, sumRows.length, 8).setValues(sumRows); Sm.getRange(s2, 7, sumRows.length, 1).setNumberFormat('#,##0.00'); }
+      res = { id: id, runs: runsOut_(Run) };
+      markBackup_();   // the backup report is rebuilt in the background about a minute later: the save no longer waits for it
     } else if (A === 'getRun') {
-      res = rows_(Sl).filter(function (r) { return r['Run ID'] === d.id; }).map(function (r) { return { no: r['Employee No'], name: r.Name, position: r.Position, calc: JSON.parse(r['Detail (JSON)']) }; });
+      res = []; groups_(Sl, 1, d.id).forEach(function (g) {   // read only this run's rows (before: the whole Payslips tab on every click)
+        Sl.getRange(g[0], 1, g[1], 22).getValues().forEach(function (r) { res.push({ no: txt_(r[2]), name: r[3], position: r[4], calc: JSON.parse(r[21]) }); });
+      });
     } else if (A === 'deleteRun') {
-      rows_(Run).filter(function (r) { return r['Run ID'] === d.id; }).forEach(function (r) { Run.deleteRow(r._row); });
-      rows_(Sl).filter(function (r) { return r['Run ID'] === d.id; }).reverse().forEach(function (r) { Sl.deleteRow(r._row); }); res = true;
-      try { updateBackup_(); } catch (bkErr2) { }
+      delGroups_(Run, 1, d.id); delGroups_(Sl, 1, d.id); delGroups_(Sm, 1, d.id); res = true;
+      markBackup_();
     } else if (A === 'listUsers') {
-      res = users_().map(function (u) { return { id: u.ID, name: u.Name, email: u.Email, role: u.Role, dept: u.Dept || '', photo: u.Photo || '', active: String(u.Active) !== 'no', created: u.Created }; });
+      res = users_().map(function (u) { return { id: u.ID, name: u.Name, email: u.Email, role: u.Role || 'payroll', dept: u.Dept || '', photo: u.Photo || '', active: String(u.Active) !== 'no', created: u.Created }; });
     } else if (A === 'addUser') {                 // every payroll user can create accounts
       var em = String(d.email || '').trim().toLowerCase();
       if (!em || !d.password || String(d.password).length < 6) return out_({ ok: false, error: 'Email and a password of at least 6 characters are required.' });
       if (users_().some(function (u) { return String(u.Email).toLowerCase() === em; })) return out_({ ok: false, error: 'That email already has an account.' });
-      var salt = uid_(); userPut_({ ID: uid_(), Name: d.name || em, Email: em, Role: d.role || 'payroll', Dept: d.dept || '', Photo: d.photo || '', 'Password hash': hash_(d.password, salt), Salt: salt, Created: new Date(), Active: 'yes' }); res = true;
+      var salt = uid_(); userPut_({ ID: uid_(), Name: d.name || em, Email: em, Role: ROLES.indexOf(d.role) >= 0 ? d.role : 'payroll', Dept: d.dept || '', Photo: d.photo || '', 'Password hash': hash_(d.password, salt), Salt: salt, Created: new Date(), Active: 'yes' }); res = true;
     } else if (A === 'updateUser') {               // edit name, email, department and the 2x2 picture of an account
       var u4 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (!u4) return out_({ ok: false, error: 'User not found.' });
       var em4 = String(d.email || u4.Email).trim().toLowerCase();
@@ -180,6 +225,7 @@ function doPost(e) {
         if (String(u4.Email).toLowerCase() === DEFAULT_EMAIL) return out_({ ok: false, error: 'The email of the default account cannot be changed.' });
         if (users_().some(function (u) { return u.ID !== u4.ID && String(u.Email).toLowerCase() === em4; })) return out_({ ok: false, error: 'That email already has an account.' });
       }
+      if (ROLES.indexOf(d.role) >= 0 && String(u4.Email).toLowerCase() !== DEFAULT_EMAIL && String(u4.ID) !== String(me.id)) { u4.Role = d.role; cache.put('role_' + u4.ID, d.role, 21600); }
       u4.Name = d.name || u4.Name; u4.Email = em4; u4.Dept = d.dept || ''; if (d.photo !== undefined) u4.Photo = d.photo || '';
       userPut_(u4);
       res = { id: u4.ID, name: u4.Name, email: u4.Email, role: u4.Role, dept: u4.Dept || '', photo: u4.Photo || '' };
@@ -188,7 +234,7 @@ function doPost(e) {
       var u1 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (!u1 || !d.password || String(d.password).length < 6) return out_({ ok: false, error: 'Password must be at least 6 characters.' });
       var s2 = uid_(); u1['Password hash'] = hash_(d.password, s2); u1.Salt = s2; userPut_(u1); res = true;
     } else if (A === 'toggleUser') {
-      var u2 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (u2 && String(u2.Email).toLowerCase() !== me.email.toLowerCase()) { u2.Active = d.active ? 'yes' : 'no'; userPut_(u2); } res = true;
+      var u2 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (u2 && String(u2.Email).toLowerCase() !== me.email.toLowerCase()) { u2.Active = d.active ? 'yes' : 'no'; userPut_(u2); if (d.active) cache.remove('off_' + u2.ID); else cache.put('off_' + u2.ID, '1', 21600); } res = true;
     } else if (A === 'saveLeave') {
       var Lv = ss.getSheetByName('Leaves'), id5 = d.id || ('LV-' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyyMMdd-HHmmss') + '-' + uid_().slice(1, 4)),
           now5 = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm'),
@@ -207,13 +253,13 @@ function doPost(e) {
         sh.getRange(1, 1, 1, w).setValues([h]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff'); sh.setFrozenRows(1);
         (x.text || []).forEach(function (c) { sh.getRange(2, c + 1, Math.max(1, rows.length), 1).setNumberFormat('@'); });   // numbers, dates and times typed as text keep their form
         for (i = 0; i < rows.length; i += 2000) { n = Math.min(2000, rows.length - i); sh.getRange(2 + i, 1, n, w).setValues(rows.slice(i, i + n)); }
-        sh.autoResizeColumns(1, w);
+        if (rows.length < 400) sh.autoResizeColumns(1, w);
       });
       res = true;
     } else if (A === 'deleteUser') {
-      var u3 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (u3 && String(u3.Email).toLowerCase() !== me.email.toLowerCase() && u3.Email !== DEFAULT_EMAIL) userDel_(u3.ID); res = true;
+      var u3 = users_().filter(function (u) { return u.ID === d.id; })[0]; if (u3 && String(u3.Email).toLowerCase() !== me.email.toLowerCase() && u3.Email !== DEFAULT_EMAIL) userDel_(u3.ID); cache.put('off_' + u3.ID, '1', 21600); res = true;
     } else if (A === 'updateBackup') {
-      res = updateBackup_(+d.year || 0, d.sheets);
+      props.deleteProperty('BK_DIRTY'); res = updateBackup_(+d.year || 0, d.sheets);
     } else if (A === 'openDatabase') {              // owner only, needs the database password
       if (String(me.email).toLowerCase() !== DEFAULT_EMAIL) return out_({ ok: false, error: 'Only the owner can open the main database.' });
       var chk = dbPwCheck_(d.password, cache); if (chk) return out_({ ok: false, error: chk });
@@ -224,11 +270,81 @@ function doPost(e) {
       if (String(d.password || '').length < 8) return out_({ ok: false, error: 'The database password must be at least 8 characters.' });
       if (pr.getProperty('DB_PW_HASH')) { var chk2 = dbPwCheck_(d.current, cache); if (chk2) return out_({ ok: false, error: chk2 }); }
       var s3 = uid_(); pr.setProperty('DB_PW_SALT', s3); pr.setProperty('DB_PW_HASH', hash_(d.password, s3)); res = true;
+    } else if (A === 'otAdd') {                   // add / change overtime entries: [{id, empId, date, hours, reason}] (HR and payroll)
+      otPut_(ss, d.list || [], me.name); res = otRows_(ss);
+    } else if (A === 'otRemove') {
+      otDel_(ss, d.ids || []); res = otRows_(ss);
     } else return out_({ ok: false, error: 'Unknown action.' });
     return out_({ ok: true, data: res });
   } catch (err) { return out_({ ok: false, error: String(err && err.message || err) }); }
   finally { lock.releaseLock(); }
 }
+
+/* ===================== helpers: row blocks, runs list, overtime file, backup scheduling ===================== */
+/* Contiguous row groups whose column `col` equals `val`: [[firstRow, count], ...]. Reads ONE column only. */
+function groups_(sh, col, val) {
+  var n = sh.getLastRow() - 1, out = [], i, start = -1, v;
+  if (n < 1) return out;
+  v = sh.getRange(2, col, n, 1).getValues();
+  for (i = 0; i <= n; i++) {
+    var hit = i < n && String(v[i][0]) === String(val);
+    if (hit && start < 0) start = i;
+    if (!hit && start >= 0) { out.push([start + 2, i - start]); start = -1; }
+  }
+  return out;
+}
+function delGroups_(sh, col, val) {
+  var g = groups_(sh, col, val), i;
+  for (i = g.length - 1; i >= 0; i--) {
+    if (sh.getMaxRows() - g[i][1] <= sh.getFrozenRows()) sh.insertRowsAfter(sh.getMaxRows(), 1);
+    sh.deleteRows(g[i][0], g[i][1]);
+  }
+}
+function runsOut_(Run) {
+  return rows_(Run).filter(function (r) { return r['Run ID']; }).map(function (r) { return { id: r['Run ID'], period: r.Period, payDate: r['Pay date'], count: r.Employees, gross: r.Gross, ded: r.Deductions, net: r['Net pay'], group: r.Group || '', status: r.Status || 'Finalized', by: r['Saved by'], at: r['Saved at'] }; });
+}
+function hrSettings_(s) { s = s || {}; var D = s.dtr || {}; return { leaveTypes: s.leaveTypes || null, leaveTotal: s.leaveTotal, unpaidLeave: s.unpaidLeave, workDays: s.workDays, dtr: { workDays: D.workDays, holidays: D.holidays || [] } }; }
+
+/* OVERTIME FILE: its own tab (Overtime File). Entries: {id, empId, date, hours, reason}. */
+function otOut_(r) { return { id: String(r.ID), empId: String(r['Employee ID']), no: txt_(r['Employee No']), name: r.Name, date: txt_(r.Date), hours: +r.Hours || 0, reason: r.Reason || '', by: r['Filed by'] || '', at: txt_(r['Filed at']) }; }
+function otRows_(ss) { return rows_(ss.getSheetByName('Overtime File')).filter(function (r) { return r.ID; }).map(otOut_); }
+function otPut_(ss, list, by) {
+  var sh = ss.getSheetByName('Overtime File'), last = sh.getLastRow(), ids = {}, upd = [], fresh = [], now = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm'), emp = {};
+  if (last > 1) sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r, i) { ids[String(r[0])] = i + 2; });
+  rows_(ss.getSheetByName('Employees')).forEach(function (r) { emp[String(r.ID)] = { no: txt_(r['Employee No']), name: txt_(r.Name) }; });
+  list.forEach(function (x) {
+    var e = emp[String(x.empId)] || {}, id = String(x.id || ('ot' + Utilities.getUuid().replace(/-/g, '').slice(0, 10))), h = Math.round((+x.hours || 0) * 10000) / 10000;
+    if (!(h > 0) || h > 24 || !x.date) return;
+    var row = [id, String(x.empId || ''), e.no || String(x.no || ''), e.name || String(x.name || ''), String(x.date), h, String(x.reason || ''), by || '', now];
+    if (ids[id]) upd.push([ids[id], row]); else fresh.push(row);
+  });
+  upd.forEach(function (u) { sh.getRange(u[0], 1, 1, 9).setValues([u[1]]); });
+  if (fresh.length) { var st = sh.getLastRow() + 1; if (sh.getMaxRows() < st + fresh.length) sh.insertRowsAfter(sh.getMaxRows(), st + fresh.length - sh.getMaxRows()); sh.getRange(st, 1, fresh.length, 9).setValues(fresh); }
+}
+function otDel_(ss, idList) {
+  var sh = ss.getSheetByName('Overtime File'), last = sh.getLastRow(), del = {}, rows = [], i;
+  idList.forEach(function (x) { del[String(x)] = 1; });
+  if (last < 2) return;
+  sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r, k) { if (del[String(r[0])]) rows.push(k + 2); });
+  for (i = rows.length - 1; i >= 0; i--) { if (sh.getMaxRows() - 1 <= sh.getFrozenRows()) sh.insertRowsAfter(sh.getMaxRows(), 1); sh.deleteRow(rows[i]); }
+}
+
+/* BACKUP IN THE BACKGROUND: saving a payroll only marks the backup as out of date and sets a one-time trigger; the backup report is rebuilt about a minute later (this was the 1-2 minutes of waiting). */
+function markBackup_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty('BK_DIRTY', '1');
+    var has = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'backupIfDirty'; });
+    if (!has) ScriptApp.newTrigger('backupIfDirty').timeBased().after(60 * 1000).create();
+  } catch (e) { }   // if triggers are not allowed the nightly backup and the Update backup report button still work
+}
+function backupIfDirty() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'backupIfDirty') ScriptApp.deleteTrigger(t); });
+  var pr = PropertiesService.getScriptProperties(), cache = CacheService.getScriptCache();
+  if (pr.getProperty('BK_DIRTY') !== '1' || cache.get('bk_run')) return;
+  pr.deleteProperty('BK_DIRTY'); cache.put('bk_run', '1', 600);
+  try { updateBackup_(); } finally { cache.remove('bk_run'); }
+}
+
 /* ===================== DATABASE PASSWORD (owner only) ===================== */
 function dbPwCheck_(p, cache) {
   var pr = PropertiesService.getScriptProperties(), h = pr.getProperty('DB_PW_HASH'), fails = +cache.get('dbfail') || 0;
@@ -290,6 +406,16 @@ function bkBuild_(emps, runs, slips, year, workDays) {
     rows: S.map(function (s) {
       var r = s.r; return [s.pay, s.period, s.grp, s.no, s.name, String(r.Position || ''), num_(r.Basic), num_(r.Allowances), num_(r.Overtime), num_(r['Other earnings']), num_(r['Holiday pay']), num_(r.Gross), num_(r.Absent), num_(r.Late), num_(r.SSS), num_(r.PhilHealth), num_(r['Pag-IBIG']), num_(r.Tax), num_(r['Loans/Other']), num_(r['Cash advance']), num_(r['Total deductions']), num_(r['Net pay'])];
     }) }] });
+
+  // 2b. PAYSLIP SUMMARY: one block per payroll run: employee name, salary (net pay) and an empty Signature column to sign on
+  var smBlocks = [], smBy = {};
+  S.forEach(function (s0) {
+    var k = String(s0.r['Run ID']), B = smBy[k];
+    if (!B) { B = smBy[k] = { heading: (s0.grp || 'All') + '  |  ' + s0.period + '  |  Pay date ' + s0.pay, header: ['No.', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'], text: [1], money: [3], total: [3], rows: [] }; smBlocks.push(B); }
+    B.rows.push([B.rows.length + 1, s0.no, s0.name, num_(s0.r['Net pay']), '']);
+  });
+  smBlocks.forEach(function (B) { B.rows.sort(function (a, b) { return String(a[2]).localeCompare(String(b[2])); }); B.rows.forEach(function (r, i) { r[0] = i + 1; }); });
+  defs.push({ name: 'PAYSLIP SUMMARY', title: 'PAYSLIP SUMMARY', subtitle: sub + '  |  employee name, salary (net pay) and signature, one list per payroll run, newest first', sig: 4, blocks: smBlocks.length ? smBlocks : [{ header: ['No.', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'], rows: [] }] });
 
   // 3. EMPLOYEE CASH ADVANCE RECORD: current balances, then every deduction
   var bal = list.filter(function (e) { var ca = e.ca || {}; return +ca.balance > 0 || +ca.perPay > 0; }).map(function (e) { var ca = e.ca || {}; return [e.no, e.name, e.dept, grp_(e.category), num_(ca.balance), num_(ca.perPay)]; });
@@ -380,6 +506,10 @@ function bkWrite_(ss, def) {
   });
   sh.autoResizeColumns(1, w);   // sized before the title is written, so the long title does not widen column A
   if (def.cap) for (var c2 = 1; c2 <= w; c2++) if (sh.getColumnWidth(c2) > 320) sh.setColumnWidth(c2, 320);
+  if (def.sig !== undefined) {   // signature column: wide, boxed, tall rows so it can be printed and signed
+    sh.setColumnWidth(def.sig + 1, 280);
+    lay.forEach(function (L) { if (!L.rows.length) return; sh.getRange(L.start, def.sig + 1, L.rows.length, 1).setBorder(true, true, true, true, true, true); sh.setRowHeights(L.start, L.rows.length, 30); sh.getRange(L.start, 1, L.rows.length, L.bw).setVerticalAlignment('middle'); });
+  }
   sh.getRange(1, 1).setValue(def.title).setFontSize(14).setFontWeight('bold');
   sh.getRange(2, 1).setValue(def.subtitle).setFontColor('#666666').setFontStyle('italic');
   lay.forEach(function (L) { if (L.hr) sh.getRange(L.hr, 1).setValue(L.b.heading).setFontWeight('bold').setFontSize(12); });
@@ -410,8 +540,8 @@ function updateBackup_(year, sheets) {
   try { wd = +(JSON.parse(setRow.Value).workDays) || 22; } catch (e0) { }
   var defs = bkBuild_(emps, runs, slips, y, wd).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
   // The attendance tabs are filled from the app. Until the first time they are sent, show them as empty tabs so they are always in the backup.
-  [['DAILY ATTENDANCE LOGS', ['Date', 'Day', 'Employee No', 'Name', 'Department', 'Group', 'Time in', 'Time out', 'Hours worked', 'Late (min)', 'Overtime (min)', 'Status', 'Remarks']],
-   ['SUMMARY OF ATTENDANCE', ['Employee No', 'Name', 'Department', 'Group', 'From', 'To', 'Schedule', 'Days present', 'Days absent', 'Half days', 'Late (days)', 'Late (min)', 'Overtime (hrs)', 'Hours worked', 'Overtime allowed']]].forEach(function (p) {
+  [['DAILY ATTENDANCE LOGS', TABS['Daily Attendance Logs']],
+   ['SUMMARY OF ATTENDANCE', TABS['Summary of Attendance']]].forEach(function (p) {
     if (!defs.some(function (d) { return d.name === p[0]; }) && !ss.getSheetByName(p[0])) defs.push({ name: p[0], title: p[0], subtitle: 'Backup copy of the Payroll Management System  |  not sent yet: press \"Update backup report\" in Reports to fill it from the biometric files', blocks: [{ header: p[1], rows: [] }] });
   });
   defs.forEach(function (d) { bkWrite_(ss, d); });
@@ -427,7 +557,7 @@ function installDailyBackup() {
   ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(22).inTimezone('Asia/Manila').create();
   return 'Daily backup report scheduled for about 10 PM.';
 }
-function dailyBackup() { var lock = LockService.getScriptLock(); lock.waitLock(25000); try { updateBackup_(); } finally { lock.releaseLock(); } }
+function dailyBackup() { var cache = CacheService.getScriptCache(); if (cache.get('bk_run')) return; cache.put('bk_run', '1', 600); try { updateBackup_(); } finally { cache.remove('bk_run'); } }
 
 function lvOut_(r) {
   var t = function (v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Manila', 'yyyy-MM-dd') : String(v == null ? '' : v); };

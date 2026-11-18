@@ -24,16 +24,18 @@ function otFileApply(e, r) {
 
 function dtrCalc(e, from, to) {
   const D = ST.settings.dtr, days = daysOf(e) || {}, hol = (D.holidays || []).map((h) => h.date), wfhL = (D.wfhDays || []).map((h) => h.date), [sh, sm] = D.start.split(":").map(Number), [eh, em] = D.end.split(":").map(Number);   // MID = 12:30 PM: a lone punch before it is a time in, after it a time out
-  const o = { present: 0, absent: 0, half: 0, late: 0, lateDays: 0, ot: 0, hrs: 0, otMin: 0, hrsMin: 0, scheds: new Set(), rows: [] };
+  const o = { present: 0, absent: 0, half: 0, late: 0, lateDays: 0, early: 0, earlyDays: 0, earlyOut: 0, earlyOutDays: 0, ot: 0, hrs: 0, otMin: 0, hrsMin: 0, scheds: new Set(), rows: [] };
   for (let d = from; d <= to; d = addDay(d)) {
     const ov = dtrEditOf(e, d), rawP = (days[d] || []).slice().sort((a, b) => a - b), skipHol = isHolDay(d, hol) && !ov && D.holPunch !== true;   // Holiday: biometric time in / out is NOT counted unless Settings allows it (a time typed by hand in the DTR is always counted)
-    const p = ov ? [ov.in, ov.out].filter((x) => x !== null && x !== undefined).sort((a, b) => a - b) : skipHol ? [] : rawP, wd = (D.workDays || [1, 2, 3, 4, 5]).includes(new Date(d + "T12:00").getDay()), isH = hol.includes(d), isW = !isH && wfhL.includes(d), lv = wd && !isH ? lvOn(e, d) : null, r = { d, wd, isH, isW, inn: null, out: null, hrs: 0, late: 0, ot: 0, note: "", st: "" };
+    const p = ov ? [ov.in, ov.out].filter((x) => x !== null && x !== undefined).sort((a, b) => a - b) : skipHol ? [] : rawP, wd = (D.workDays || [1, 2, 3, 4, 5]).includes(new Date(d + "T12:00").getDay()), isH = hol.includes(d), isW = !isH && wfhL.includes(d), lv = wd && !isH ? lvOn(e, d) : null, r = { d, wd, isH, isW, inn: null, out: null, hrs: 0, late: 0, early: 0, earlyOut: 0, ot: 0, note: "", st: "" };
     const SC = schedOf(e, p), S0 = SC.S0, E0 = SC.E0, MID = SC.MID; r.sched = hm(S0) + " - " + hm(E0); const TH = wd && !isH ? tHrs(e, new Date(d + "T12:00").getDay()) : null;   // TH = hours of this teacher on this weekday (Teacher Hours menu), null = not set   // each day uses the shift that fits that day's punches
     if (p.length) {
       if (ov) { r.inn = ov.in ?? null; r.out = ov.out ?? null; r.edited = true; }   // time typed by hand in the DTR
       else if (p.length > 1 && p[p.length - 1] - p[0] >= 10) { r.inn = p[0]; r.out = p[p.length - 1]; }   // two scans a few minutes apart are one scan
       else if (p[0] < MID) r.inn = p[0]; else r.out = p[0];
       if (wd && r.inn !== null && !lv) { const gr = graceOf(e, new Date(d + "T12:00").getDay()); r.late = r.inn > S0 + gr ? lateMinutes(r.inn, S0, gr) : 0; }
+      /* EARLY: time in before the scheduled time in (teachers: their own Time in / Time out from the Teacher Hours menu), or time out before the scheduled time out. Reported only (Settings > Auto late & overtime), nothing is deducted. */
+      { const EA = D.early || {}; if (EA.on !== false && wd && !isH && !lv && !isW) { const ei = Math.max(1, +(EA.inMin ?? 1) || 1), eo = Math.max(1, +(EA.outMin ?? 1) || 1); if (r.inn !== null && S0 - r.inn >= ei - 1e-9) r.early = Math.floor(S0 - r.inn + 1e-9); if (r.out !== null && E0 - r.out >= eo - 1e-9) r.earlyOut = Math.floor(E0 - r.out + 1e-9); } }
       if (r.inn !== null && r.out !== null) {
         const span = r.out - r.inn, mins = span - (span > 300 ? +D.lunchMin || 0 : 0); r.hrs = Math.max(0, mins) / 60;
         if (TH > 0) r.hrs = D.teacherHrMode === "cap" ? Math.min(r.hrs, TH) : TH;   // scheduled hours of the day
@@ -46,10 +48,12 @@ function dtrCalc(e, from, to) {
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
       if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late";
+      if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);
+      if (r.earlyOut) r.note = (r.note ? r.note + "; " : "") + "Early out " + fmtHM(r.earlyOut);
       if (r.st === "absent") o.absent++;
       else if (r.st === "half") { const hv = +(D.halfDayAbs ?? 0.5); o.absent += hv; o.present += 1 - hv; o.half++; }
       else if (wd) o.present++;
-      o.late += r.late; if (r.late) o.lateDays++; o.ot += r.ot; o.hrs += r.hrs; o.hrsMin += Math.round(r.hrs * 60); o.scheds.add(r.sched);
+      o.late += r.late; if (r.late) o.lateDays++; o.early += r.early || 0; if (r.early) o.earlyDays++; o.earlyOut += r.earlyOut || 0; if (r.earlyOut) o.earlyOutDays++; o.ot += r.ot; o.hrs += r.hrs; o.hrsMin += Math.round(r.hrs * 60); o.scheds.add(r.sched);
     } else if (isW && wd && !lv) { r.note = "WFH / Asynchronous class (with pay)"; r.wfh = true; o.present++; }   // work from home: not absent
     else if (wd && !isH) { if (lv) { r.note = lv.type + (lv.paid ? " (with pay)" : " (without pay)"); r.leave = true; } else if (TH === 0) { r.note = "No class scheduled"; } else { o.absent++; r.st = "absent"; r.why = "no punch"; r.note = "No punch - Absent"; } }
     else if (isH) r.note = skipHol && rawP.length ? "Holiday - biometric time not counted" : "Holiday";

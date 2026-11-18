@@ -11,6 +11,13 @@ function toast(t, err) { const m = document.createElement("div"); m.className = 
 
 TABS.splice(0, TABS.length, ["dash", "Dashboard"], ["emp", "Employees"], ["dtr", "DTR / Biometric"], ["th", "Teacher Hours"], ["leave", "Leave"], ["otf", "Overtime File"], ["run", "Payroll"], ["slips", "Payslips"], ["m13", "13th Month Pay"], ["ca", "Cash Advance"], ["loans", "Loans"], ["allow", "Allowances"], ["rep", "Reports"], ["set", "Settings"], ["usr", "Users"]);
 
+/** HR accounts (role "hr") only see Leave and the Overtime File. The server refuses every other request from an HR account too. */
+const isHR = () => !!(ST.user && ST.user.role === "hr");
+
+const HR_TABS = ["leave", "otf"];
+
+const visibleTabs = () => (isHR() ? TABS.filter((t) => HR_TABS.includes(t[0])) : TABS);
+
 const LOGO = "assets/logo.png";   // the school logo (assets/logo.png)
 
 const NAVICON = {
@@ -30,7 +37,7 @@ const NAVICON = {
   allow: '<path d="M12 2v20M17 6.5C16 5 14.2 4 12 4 9.2 4 7 5.3 7 7.5c0 4.5 10 2.5 10 7 0 2.2-2.2 3.5-5 3.5-2.2 0-4-1-5-2.5"/>',
   usr: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>' };
 
-const NAVSUB = { dash: "Overview of your payroll", emp: "Manage employee records, groups and pictures", dtr: "Biometric punches, attendance check and daily time records", th: "Hours of each teacher per day, from the teacher's schedule", leave: "Leave requests and balances", run: "Compute and finalize payroll per cut-off", slips: "Saved payroll runs and printable payslips", m13: "13th month pay per employee", loans: "Salary, SSS, Pag-IBIG and other loans per employee", ca: "Cash advance balance and deduction per payday", allow: "Monthly or per-day allowances per employee", otf: "Overtime hours filed per employee and date", rep: "Payroll reports and exports", set: "Payroll rules, late and overtime, holidays and signatories", usr: "Accounts that can sign in" };
+const NAVSUB = { dash: "Overview of your payroll", emp: "Manage employee records, groups and pictures", dtr: "Biometric punches, attendance check and daily time records", th: "Hours of each teacher per day, from the teacher's schedule", leave: "Leave requests and balances", run: "Compute and finalize payroll per cut-off", slips: "Saved payroll runs and printable payslips", m13: "13th month pay per employee", loans: "Company, SSS (salary / calamity) and HDMF (MPL / calamity) loans per employee", ca: "Cash advance balance and deduction per payday", allow: "Monthly or per-day allowances per employee", otf: "Overtime hours filed per employee and date", rep: "Payroll reports and exports", set: "Payroll rules, late and overtime, holidays and signatories", usr: "Accounts that can sign in" };
 
 function whoAmI() {   // the signed-in user's 2x2 picture, full name and department (from the matching employee record when the e-mail matches)
   const u = ST.user || {}, em = String(u.email || "").toLowerCase(), e = (em && (ST.employees || []).find((x) => String(x.email || "").toLowerCase() === em)) || {};
@@ -38,10 +45,11 @@ function whoAmI() {   // the signed-in user's 2x2 picture, full name and departm
 }
 
 function shell() {
+  if (isHR() && !HR_TABS.includes(ST.tab)) ST.tab = "leave";
   const w = whoAmI(), cur = (TABS.find((t) => t[0] === ST.tab) || [])[1] || "";
   A.innerHTML = `<div class="layout"><aside class="side noprint"><div class="sbrand"><img src="${LOGO}" alt=""><b>ARK-Payroll Management System</b></div>
   <div class="prof">${w.photo ? `<img class="pic" src="${w.photo}" alt="">` : `<div class="pic">${esc(String(w.name).charAt(0).toUpperCase() || "?")}</div>`}<div class="pn">${esc(w.name)}</div><div class="pd">${esc(w.position || w.dept)}</div></div>
-  <div class="slab">Menu</div><div class="smenu">${TABS.map(([k, l]) => `<button data-t="${k}" class="${ST.tab === k ? "on" : ""}"><svg viewBox="0 0 24 24" aria-hidden="true">${NAVICON[k] || ""}</svg><span>${l}</span></button>`).join("")}</div>
+  <div class="slab">Menu</div><div class="smenu">${visibleTabs().map(([k, l]) => `<button data-t="${k}" class="${ST.tab === k ? "on" : ""}"><svg viewBox="0 0 24 24" aria-hidden="true">${NAVICON[k] || ""}</svg><span>${l}</span></button>`).join("")}</div>
   <div class="sfoot"><a href="#" id="lo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out</a></div></aside>
   <div class="content"><div class="top noprint"><div class="tt"><h1>${esc(cur)}</h1><p>${esc(NAVSUB[ST.tab] || "")}</p></div><div class="tdate"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</div></div><main id="v"></main></div></div>`;
   $("#lo").onclick = (e) => { e.preventDefault(); logout(); };
