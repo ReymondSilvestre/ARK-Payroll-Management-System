@@ -30,7 +30,7 @@ var TABS = {
   'Class Attendance': ['Date', 'Class ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Scheduled start', 'Scheduled end', 'Time in', 'Time out', 'Status', 'Remarks', 'Checked by', 'Checked at']   // what the Class Monitor recorded, one row per class per date
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
-var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark'];   // what a Class Monitor account may call: the class check, nothing else
+var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave'];   // what a Class Monitor account may call: the class check and the class schedule, nothing else
 var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
 var SCHEMA_V = 'v9-2026-11-18d';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 

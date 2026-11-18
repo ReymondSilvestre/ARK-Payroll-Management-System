@@ -59,10 +59,10 @@ async function cmLoad(date) {
 
 function classMonitor() {
   const C = (ST.cls ||= { view: "monitor", date: cmYmd(new Date()), hour: "now", status: "all", q: "", classes: null, att: {}, sel: null, from: cmYmd(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), to: cmYmd(new Date()) });
-  if (isMonitor()) { C.view = "monitor"; C.date = cmYmd(new Date()); }
+  if (isMonitor()) { if (C.view !== "schedule") C.view = "monitor"; C.date = cmYmd(new Date()); }
   clearInterval(C.timer);
   if (C.classes === null) { V('<div class="card muted">Loading the classes...</div>'); cmLoad(C.date).then(classMonitor).catch(() => { C.classes = []; classMonitor(); }); return; }
-  const tabs = isMonitor() ? "" : `<div class="chips noprint" style="display:inline-flex;margin-bottom:1rem"><button data-cv="monitor" class="${C.view === "monitor" ? "on" : ""}">Class check</button><button data-cv="schedule" class="${C.view === "schedule" ? "on" : ""}">Class schedule</button><button data-cv="report" class="${C.view === "report" ? "on" : ""}">Report</button></div>`;
+  const tabs = `<div class="chips noprint" style="display:inline-flex;margin-bottom:1rem"><button data-cv="monitor" class="${C.view === "monitor" ? "on" : ""}">Class check</button><button data-cv="schedule" class="${C.view === "schedule" ? "on" : ""}">Class schedule</button>${isMonitor() ? "" : `<button data-cv="report" class="${C.view === "report" ? "on" : ""}">Report</button>`}</div>`;
   V(`${tabs}<div id="cmv"></div>`);
   document.querySelectorAll("[data-cv]").forEach((b) => b.onclick = () => { C.view = b.dataset.cv; classMonitor(); });
   ({ monitor: cmCheck, schedule: cmSchedule, report: cmReport })[C.view]();
@@ -96,8 +96,8 @@ function cmCheck() {
       <div><label>Status</label><select id="cms"><option value="all">All</option><option>Pending</option><option>Present</option><option>Late</option><option>Absent</option></select></div>
       <div style="flex:1;min-width:12rem"><label>Search teacher / subject</label><input id="cmq" type="search" value="${esc(C.q)}" style="width:100%"></div><button class="btn" id="cmr">Refresh</button></div>
     <div class="tw" style="margin-top:.7rem"><table><tr><th>Class time</th><th>Teacher</th><th>Subject / Section</th><th>Time in</th><th>Time out</th><th>Status</th><th></th></tr>${rows.map(line).join("") || `<tr><td colspan="7" class="muted">${all.length ? "No class matches the filters." : "No classes scheduled for this day."}</td></tr>`}</table></div>
-    <p class="muted">Check every hour: press <b>Clock in now</b> when the teacher is in the classroom and <b>Clock out now</b> when the class ends. You can also type the time. A teacher who arrives after the class start (plus the grace minutes in Settings) is marked <b>Late</b>. Press <b>Absent</b> when the teacher did not come. Press <b>Save</b> on the row to keep the times (nothing is saved until then); <b>Absent</b> saves at once.</p></div>${mon ? "" : cuCard()}`;
-  $("#cmh").value = C.hour; $("#cms").value = C.status; if (!mon) cuInit();
+    <p class="muted">Check every hour: press <b>Clock in now</b> when the teacher is in the classroom and <b>Clock out now</b> when the class ends. You can also type the time. A teacher who arrives after the class start (plus the grace minutes in Settings) is marked <b>Late</b>. Press <b>Absent</b> when the teacher did not come. Press <b>Save</b> on the row to keep the times (nothing is saved until then); <b>Absent</b> saves at once.</p></div>${cuCard()}`;
+  $("#cmh").value = C.hour; $("#cms").value = C.status; cuInit();
   $("#cmd").onchange = async (e) => { C.date = e.target.value; await cmLoad(C.date); cmCheck(); };
   $("#cmh").onchange = (e) => { C.hour = e.target.value; cmCheck(); };
   $("#cms").onchange = (e) => { C.status = e.target.value; cmCheck(); };
@@ -279,7 +279,7 @@ function cmImportCard() {
     <div class="row noprint" style="gap:.5rem;flex-wrap:wrap"><button class="btn" id="tpB">Template (Excel, with examples)</button><button class="btn" id="tpM">Template with my teachers' names</button><button class="btn" id="tpC">Template (CSV)</button><button class="btn" id="tpX">Download current schedule</button></div>
     <div class="row noprint" style="gap:.7rem;flex-wrap:wrap;align-items:end;margin-top:.8rem"><div><label>Schedule file (.xlsx, .xls or .csv)</label><input type="file" id="upF" accept=".xlsx,.xls,.csv"></div><div><label>When importing</label><select id="upM"><option value="replace" ${!imp || imp.mode === "replace" ? "selected" : ""}>Replace the classes of the teachers in the file</option><option value="add" ${imp && imp.mode === "add" ? "selected" : ""}>Add to the existing classes</option><option value="all" ${imp && imp.mode === "all" ? "selected" : ""}>Replace the whole school schedule</option></select></div></div>
     <div id="upP">${imp ? cmImportPreview() : ""}</div></div>`;
-  return rule + up;
+  return (isMonitor() ? "" : rule) + up;
 }
 function cmImportPreview() {
   const imp = ST.cls.imp; cmImportCheck(imp);
@@ -336,7 +336,7 @@ function cuRead(buf) {
     if (/^e\.?g\.?/i.test(no) || /^e\.?g\.?/i.test(String(g("date")))) continue;
     if (!String(g("date")).trim() && !no && !nm) continue;
     const row = { line: i + 1, errors: [], warns: [], remarks: String(g("rm")).trim() }, date = cuParseDate(g("date"));
-    if (!date) row.errors.push(`Date not understood ("${g("date")}").`); else if (date > today) row.errors.push("The date is in the future."); row.date = date;
+    if (!date) row.errors.push(`Date not understood ("${g("date")}").`); else if (date > today) row.errors.push("The date is in the future."); else if (isMonitor() && date !== today) row.errors.push("The Class Monitor can only upload the classes of today."); row.date = date;
     let e = no ? byNo[no.toLowerCase()] : null; if (!e && nm) e = byName[cmNorm(nm)];
     if (!e) row.errors.push(`Teacher not found (${no || nm || "empty"}).`); else { row.emp = e; row.name = nameOf(e); }
     const stt = String(g("st")).trim().toLowerCase(); row.absent = /^abs/.test(stt);
