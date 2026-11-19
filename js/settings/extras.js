@@ -41,7 +41,7 @@ function collectExtras() {
   const gr = { staff: {}, teacher: {}, admin: {} }; document.querySelectorAll(".gri").forEach((x) => { gr[x.dataset.g][x.dataset.d] = Math.max(0, +x.value || 0); });
   S.dtr.grace = gr; S.dtr.graceStaff = gr.staff[1]; S.dtr.graceMin = gr.staff[1]; S.dtr.graceTeacher = gr.teacher[1];
   const og = {}, op = {}; document.querySelectorAll(".otg").forEach((x) => { og[x.dataset.g] = x.checked; }); document.querySelectorAll("[data-oe]").forEach((r) => { const k = $(".otw", r).value; if (k) op[r.dataset.oe] = k; });
-  S.dtr.ot = { groups: og, people: op, startMin: Math.max(0, +v("ot1") || 0), blockMin: Math.max(1, +v("ot2") || 60), roundFrom: v("ot6") === "" || isNaN(+v("ot6")) ? 31 : Math.max(0, +v("ot6")), minMin: Math.max(0, +v("ot3") || 0), maxHrs: Math.max(0, +v("ot4") || 0), auto: $("#ot5").checked };
+  S.dtr.ot = { groups: og, people: op, startMin: Math.max(0, +v("ot1") || 0), blockMin: Math.max(1, +v("ot2") || 60), roundFrom: v("ot6") === "" || isNaN(+v("ot6")) ? 30 : Math.max(0, +v("ot6")), minMin: Math.max(0, +v("ot3") || 0), maxHrs: Math.max(0, +v("ot4") || 0), auto: $("#ot5").checked };
   S.dtr.late = { countFrom: "beyond", round: v("lt2"), blockMin: Math.max(1, +v("lt3") || 1), deduct: $("#lt4").checked };
   S.dtr.hrsBlock = document.getElementById("hb1") ? Math.max(0, +v("hb1") || 0) : 30;
   S.dtr.early = { on: !document.getElementById("ea1") || document.getElementById("ea1").checked, inMin: Math.max(1, +v("ea2") || 1), outMin: Math.max(1, +v("ea3") || 1) };

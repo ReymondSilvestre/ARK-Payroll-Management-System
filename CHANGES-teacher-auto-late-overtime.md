@@ -21,9 +21,9 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 - "Undertime (H:MM) - no deduction" is listed with each day, the time out and the minutes early. Undertime is shown only; nothing is deducted for it.
 - Files: js/pages/payroll.js, js/core/payroll-calc.js, js/pages/payslips.js. No change to backend/Code.gs.
 
-## Overtime counted per hour: minutes 31-59 count as 1 hour
-- Overtime is counted in whole hours. The minutes past the last full hour count as one more hour only from minute 31 (1 hr 30 min = 1 hr, 1 hr 31 min to 1 hr 59 min = 2 hrs, 1-30 min alone = 0).
-- Settings > Overtime: "Counted in blocks of (minutes)" = 60 and new "Minutes of the hour from which a full hour counts" = 31 (0 = the excess minutes are never counted). Set once for saved settings; later changes are kept.
+## Overtime counted per hour: minutes 30-59 count as 1 hour
+- Overtime is counted in whole hours. The minutes past the last full hour count as one more hour from minute 30 (1 hr 29 min = 1 hr, 1 hr 30 min to 1 hr 59 min = 2 hrs, 1-29 min alone = 0).
+- Settings > Overtime: "Counted in blocks of (minutes)" = 60 and new "Minutes of the hour from which a full hour counts" = 30 (0 = the excess minutes are never counted). Set once for saved settings; later changes are kept.
 - Applies to late time out and holiday / WFH work. Overtime typed in the Overtime File is paid as filed.
 
 ## Payroll tab: OT hours in exact Hours:Minutes
@@ -31,3 +31,6 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 
 ## Payslip: overtime in Hours:Minutes
 - The Overtime box and the Overtime earnings line show H:MM (e.g. 2:00, 1:30), not "1 hr 30 min". js/pages/payslips.js only.
+
+## Fix: overtime rounding was not applied to saved settings
+- The one-time update that sets the overtime rounding was skipped for existing saved settings, so exact minutes were still counted. Fixed. Rule is now: 1-29 min not counted, 30-59 min count as 1 hour (3 hrs 49 min = 4 hrs, 3 hrs 29 min = 3 hrs).
