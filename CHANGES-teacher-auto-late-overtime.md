@@ -15,3 +15,8 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 ## Biometric DTR hours in 30-minute blocks
 - Hours worked from the biometric DTR are counted in blocks of 30 minutes; the excess minutes are not counted (8:45 = 8:30, 8:20 = 8:00).
 - Settings > Auto late & overtime > "Biometric DTR: count hours worked in blocks of (minutes)" (default 30, 0 = exact minutes). Teachers with set Teacher Hours keep their scheduled hours.
+
+## Employee payslip: half day and undertime
+- Staff / admin payslip: "Half day (N days)" is now its own deduction line (days from the DTR, x half-day value in Settings x daily rate). "Absences" no longer includes them, the total deduction is the same.
+- "Undertime (H:MM) - no deduction" is listed with each day, the time out and the minutes early. Undertime is shown only; nothing is deducted for it.
+- Files: js/pages/payroll.js, js/core/payroll-calc.js, js/pages/payslips.js. No change to backend/Code.gs.

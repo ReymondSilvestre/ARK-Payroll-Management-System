@@ -169,7 +169,7 @@ function computeSlip(info, inp, S, period) {
     holidays: hl.length, holWorked: hl.filter((h) => h.worked).length, holPay, holDed, holFixed, wfhPay, wfhDed, wfhFixed, wfhDays: wl.length, wfhList: wl.map((w) => ({ date: w.date, label: w.label || "", type: w.type || "wfh", hours: hasN(w.hours) ? +w.hours : null, worked: !!w.worked })), holList: hl.map((h) => ({ date: h.date, label: h.label || "", type: h.type || "regular", worked: !!h.worked })),
     dailyRate: perHour ? 0 : r2(daily), paidDays: r2((+S.workDays || 0) / div), otHours: r2(+i.otHours || 0), lateMin: r2(+i.lateMin || 0), presentDays: i.dtr && i.dtr.present !== undefined && i.dtr.present !== null ? +i.dtr.present : null,
     /* WHY each deduction was made (printed on the payslip) */
-    why: { absentList: i.absentList || null, lateList: i.lateList || null, leaveList: i.leaveList || [], otherDedNote: String(i.otherDedNote || "").trim(), holDedList, wfhDedList, taxWhy, semi, half: period.half, sssWhen: S.sss.when, phicWhen: S.phic.when, hdmfWhen: S.hdmf.when, manualSss: manual.sss, manualPhic: manual.phic, manualHdmf: manual.hdmf, manualTax: manual.tax, absentTyped: i.absentList === null, lateTyped: i.lateList === null },
+    why: { absentList: i.absentList || null, lateList: i.lateList || null, halfList: i.halfList || null, underList: i.underList || null, leaveList: i.leaveList || [], otherDedNote: String(i.otherDedNote || "").trim(), holDedList, wfhDedList, taxWhy, semi, half: period.half, sssWhen: S.sss.when, phicWhen: S.phic.when, hdmfWhen: S.hdmf.when, manualSss: manual.sss, manualPhic: manual.phic, manualHdmf: manual.hdmf, manualTax: manual.tax, absentTyped: i.absentList === null, lateTyped: i.lateList === null },
     classInfo: i.classInfo || null };
 }
 
