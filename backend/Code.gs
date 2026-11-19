@@ -16,7 +16,7 @@ var TABS = {
   Employees: ['ID', 'Employee No', 'Last name', 'First name', 'M.I.', 'Name', 'Birthday', 'Gender', 'Civil status', 'Position', 'Department', 'Employment type', 'Date hired', 'Status', 'SSS No', 'PhilHealth No', 'Pag-IBIG No', 'TIN', 'Category', 'Monthly basic', 'Daily rate', 'Hourly rate', 'Email', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'CA balance', 'CA per payday', 'Cash advance (JSON)', 'Allowances (JSON)', 'Loans (JSON)', 'Updated', 'Photo'],
   'Payroll Runs': ['Run ID', 'Period', 'Pay date', 'Employees', 'Gross', 'Deductions', 'Net pay', 'Saved by', 'Saved at', 'Group', 'Status'],
   Payslips: ['Run ID', 'Period', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans/Other', 'Cash advance', 'Total deductions', 'Net pay', 'Detail (JSON)', 'Late days', 'Late hours deducted (H:MM)', 'Actual late after grace (H:MM)', 'Late deduction amount'],
-  Settings: ['Key', 'Value'],
+  Settings: ['Section', 'Setting', 'Value', 'Last changed', 'Changed by'],   // the live settings: ONE ROW PER SETTING (Value is typed JSON: 26, "06:00", true, [1,2,3]); the app rebuilds its settings from these rows
   Leaves: ['ID', 'Employee ID', 'Employee No', 'Name', 'Type', 'Paid', 'From', 'To', 'Days', 'Reason', 'Status', 'Filed by', 'Filed at'],
   'Daily Attendance Logs': ['Date', 'Day', 'Employee No', 'Name', 'Department', 'Group', 'Time in', 'Time out', 'Hours worked', 'Late (min)', 'Early in (min)', 'Early out (min)', 'Overtime (min)', 'Status', 'Remarks'],
   'Summary of Attendance': ['Employee No', 'Name', 'Department', 'Group', 'From', 'To', 'Schedule', 'Days present', 'Days absent', 'Half days', 'Late (days)', 'Late (min)', 'Early in (days)', 'Early in (min)', 'Early out (days)', 'Overtime (hrs)', 'Hours worked', 'Overtime allowed'],
@@ -162,12 +162,11 @@ function doPost(e) {
     var res = null;
 
     if (A === 'bootstrap') {
-      var st0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0], setObj = null;
-      try { setObj = st0 ? JSON.parse(st0.Value) : null; } catch (e1) { setObj = null; }
+      var setObj = setRead_(ss);
       var ot = otRows_(ss);
       if (setObj && setObj.otFile !== undefined) {   // the overtime file used to live inside the settings: move it to its own tab once
         if (!ot.length && setObj.otFile && setObj.otFile.length) { otPut_(ss, setObj.otFile, me.name); ot = otRows_(ss); }
-        delete setObj.otFile; St.getRange(st0._row, 2).setValue(JSON.stringify(setObj));
+        delete setObj.otFile; setWrite_(ss, setObj, me, true);
       }
       var lvs = rows_(ss.getSheetByName('Leaves')).filter(function (r) { return r.ID; }).map(lvOut_);
       if (String(me.role) === 'monitor') {   // the Class Monitor sees the teachers' names and the holidays, nothing about pay
@@ -183,12 +182,9 @@ function doPost(e) {
       res = runsOut_(Run);
     } else if (A === 'saveSettings') {
       delete d.otFile;   // the overtime file has its own tab (saved by otAdd / otRemove), so saving the settings can never wipe what HR filed
-      var json0 = JSON.stringify(d);
-      if (json0.length > 49000) return out_({ ok: false, error: 'The settings are too big for one spreadsheet cell (' + json0.length + ' characters). Remove old holidays or unused shifts.' });
-      var r0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0];
-      var before0 = null; if (r0) { try { before0 = JSON.parse(r0.Value); } catch (eP) { before0 = null; } }
-      if (r0) St.getRange(r0._row, 2).setValue(json0); else St.appendRow(['settings', json0]);
-      try { setLog_(ss, before0, d, me); } catch (eL) { }   // the Settings Log tab: one row per changed setting (a log problem never blocks saving)
+      var before0 = setRead_(ss);
+      setWrite_(ss, d, me);   // one row per setting; only the rows that changed get a new 'Last changed' / 'Changed by'
+      try { setLog_(ss, before0, d, me); } catch (eL) { }   // the Settings Log tab keeps the old values: one row per change
       try { thPut_(ss, d); markBackup_(); } catch (eT) { }   // Teacher Hours tab in the database follows the app; the backup report is rebuilt a minute later
       res = true;
     } else if (A === 'saveEmployees') {           // add / edit / bulk upload: matched by Employee No, otherwise by last + first name. One read and one write, photos are never read back.
@@ -333,6 +329,56 @@ function doPost(e) {
 /* Contiguous row groups whose column `col` equals `val`: [[firstRow, count], ...]. Reads ONE column only. */
 /* SETTINGS LOG: every saved change of the settings is written to the 'Settings Log' tab, ONE ROW PER CHANGED SETTING
    (when, who, section, setting, old value, new value). Rows saved together share a Change ID. The Settings tab itself is unchanged. */
+/* SETTINGS TAB: one row per setting. Setting = the path (sss > rate, dtr > shifts [1] > start ...), Value = the value written as JSON so numbers,
+   text and true/false come back exactly as saved. setRead_ rebuilds the settings object; setWrite_ rewrites the rows and keeps the
+   'Last changed' / 'Changed by' of every row that did not change. A Settings tab from an older version (one 'settings' JSON cell) is converted once. */
+function setLeaves_(v, path, out) {
+  var isArr = Object.prototype.toString.call(v) === '[object Array]';
+  if (v !== null && typeof v === 'object' && !(isArr && (!v.length || v.every(function (x) { return x === null || typeof x !== 'object'; })))) {
+    var ks = isArr ? v.map(function (x, i) { return i; }) : Object.keys(v);
+    if (!ks.length) { out.push([path, '{}']); return out; }
+    ks.forEach(function (k) { setLeaves_(v[k], path === '' ? String(k) : path + ' > ' + (isArr ? '[' + k + ']' : k), out); });
+    return out;
+  }
+  out.push([path, JSON.stringify(v === undefined ? null : v)]); return out;
+}
+function setBuild_(rows) {   // [[path, jsonValue], ...] -> settings object
+  var root = {}, seg = function (t) { var m = /^\[(\d+)\]$/.exec(t); return m ? +m[1] : t; };
+  rows.forEach(function (r) {
+    var path = String(r[0]); if (path === '') return;
+    var parts = path.split(' > ').map(seg), cur = root, i, val;
+    try { val = JSON.parse(String(r[1])); } catch (e) { val = String(r[1]); }
+    for (i = 0; i < parts.length - 1; i++) { if (cur[parts[i]] === undefined || cur[parts[i]] === null || typeof cur[parts[i]] !== 'object') cur[parts[i]] = typeof parts[i + 1] === 'number' ? [] : {}; cur = cur[parts[i]]; }
+    cur[parts[parts.length - 1]] = val;
+  });
+  return root;
+}
+function setRead_(ss) {
+  var sh = ss.getSheetByName('Settings'), last = sh.getLastRow();
+  if (last < 2) return null;
+  if (String(sh.getRange(1, 1).getValue()) === 'Key') {   // old format: one cell with all settings -> convert once
+    var obj = null, v = sh.getRange(2, 1, last - 1, 2).getValues(), i;
+    for (i = 0; i < v.length; i++) if (v[i][0] === 'settings') { try { obj = JSON.parse(v[i][1]); } catch (e) { obj = null; } break; }
+    if (!obj) return null;
+    sh.clear(); var H = TABS.Settings; sh.getRange(1, 1, 1, H.length).setValues([H]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff'); sh.setFrozenRows(1);
+    setWrite_(ss, obj, { name: 'Converted from the old Settings tab' }, true);
+    return obj;
+  }
+  return setBuild_(sh.getRange(2, 1, last - 1, 3).getValues().map(function (r) { return [r[1], r[2]]; }));
+}
+function setWrite_(ss, obj, me, quiet) {
+  var sh = ss.getSheetByName('Settings'), H = TABS.Settings, last = sh.getLastRow(), old = {}, now = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm:ss'), by = String((me && me.name) || '');
+  if (String(sh.getRange(1, 1).getValue()) !== 'Section') { sh.clear(); sh.getRange(1, 1, 1, H.length).setValues([H]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff'); sh.setFrozenRows(1); last = 1; }
+  if (last > 1) sh.getRange(2, 1, last - 1, 5).getValues().forEach(function (r) { old[String(r[1])] = [String(r[2]), String(r[3]), String(r[4])]; });
+  var rows = setLeaves_(obj || {}, '', []).filter(function (x) { return x[0] !== ''; }).map(function (x) {
+    var p = x[0], i = p.indexOf(' > '), sec = i < 0 ? p : p.slice(0, i), o = old[p], same = o && o[0] === x[1];
+    return [sec, p, x[1], same ? o[1] : now, same ? o[2] : by];
+  });
+  var need = rows.length + 1; if (sh.getMaxRows() < need) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
+  if (last > 1) sh.getRange(2, 1, last - 1, 5).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, 5).setNumberFormat('@').setValues(rows);
+  if (sh.getLastColumn() >= 3 && sh.getColumnWidth(2) < 200) { sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 340); sh.setColumnWidth(3, 260); sh.setColumnWidth(4, 140); sh.setColumnWidth(5, 140); }
+}
 function flat_(v, path, out) {
   if (v === null || v === undefined) { out[path] = ''; return out; }
   if (Object.prototype.toString.call(v) === '[object Array]') {
@@ -689,8 +735,8 @@ function updateBackup_(year, sheets) {
   var okRun = {}; runs.forEach(function (r) { okRun[String(r['Run ID'])] = 1; }); slips = slips.filter(function (s) { return okRun[String(s['Run ID'])]; });
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
   if (!ss) { ss = SpreadsheetApp.create(BK_NAME); props.setProperty('BK_ID', ss.getId()); }   // created private in your Drive
-  var setRow = rows_(db.getSheetByName('Settings')).filter(function (r) { return r.Key === 'settings'; })[0], wd = 22;
-  var stObj = {}; try { stObj = JSON.parse(setRow.Value) || {}; wd = +stObj.workDays || 22; } catch (e0) { }
+  var wd = 22;
+  var stObj = {}; try { stObj = setRead_(db) || {}; wd = +stObj.workDays || 22; } catch (e0) { }
   var cls = { sched: rows_(db.getSheetByName('Class Schedule')).filter(function (r) { return r.ID; }), att: rows_(db.getSheetByName('Class Attendance')).filter(function (r) { return r['Class ID']; }) };
   var defs = bkBuild_(emps, runs, slips, y, wd, stObj, cls).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
   // The attendance tabs are filled from the app. Until the first time they are sent, show them as empty tabs so they are always in the backup.
