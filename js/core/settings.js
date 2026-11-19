@@ -10,6 +10,7 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const DEFAULT_SETTINGS = {
   otFile: [],                     // the overtime file: [{id, empId, date, hours, reason}]
   frequency: "semi",              // "semi" = twice a month (1-15 and 16-end), "monthly" = once a month
+  payByCutoff: true,             // twice-a-month pay of daily-rate people = paid days of THAT cut-off x daily rate (holidays included); off = fixed half of the monthly pay
   workDays: 26,                   // working days in a month: daily rate = monthly pay / workDays
   hoursPerDay: 8,
   otRate: 1.25,                   // overtime = hourly rate x this

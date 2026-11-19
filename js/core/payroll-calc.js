@@ -111,7 +111,8 @@ function computeSlip(info, inp, S, period) {
   // fixed-pay employee: monthly pay (half of it in a twice-a-month payroll) less absences and late.
   const mB = !perHour && i.mBasic !== undefined && i.mBasic !== null && i.mBasic !== "" && !isNaN(+i.mBasic);      // pay of this period typed by hand (administrators)
   const baseMonthly = monthlyBasicOf(info, S);
-  const basic = perHour ? r2(hours * rate) : mB ? r2(+i.mBasic) : r2(baseMonthly / div);
+  const byDays = !perHour && !mB && semi && S.payByCutoff !== false && period && period.start && period.end;   // Settings > Pay by days of the cut-off
+  const basic = perHour ? r2(hours * rate) : mB ? r2(+i.mBasic) : byDays ? r2(paidDaysOf(period, S, div) * dailyRateOf(info, S)) : r2(baseMonthly / div);   // monthly (for SSS / tax) stays baseMonthly
   const monthly = perHour || mB ? r2(basic * div) : baseMonthly;      // the monthly equivalent (used by the percent rates and the tax estimate)
   const daily = !perHour && !mB ? dailyRateOf(info, S) : monthly / S.workDays, hourly = perHour ? rate : daily / S.hoursPerDay;
   const absentDays = perHour ? 0 : (+i.absentDays || 0) + (+i.leaveDays || 0);
