@@ -86,7 +86,8 @@ function paidDaysOf(period, S, div) {
   const a = period && period.start, b = period && period.end;
   if (!a || !b || a > b) return r2((+S.workDays || 0) / (div || 1));
   const wd = ((S.dtr && S.dtr.workDays) || [1, 2, 3, 4, 5, 6]).map(Number); let n = 0;
-  for (let d = new Date(a + "T12:00"), e = new Date(b + "T12:00"); d <= e; d.setDate(d.getDate() + 1)) if (wd.includes(d.getDay())) n++;
+  const regHol = new Set(((S.dtr && S.dtr.holidays) || []).filter((h) => h.type === "regular").map((h) => h.date));   // a REGULAR holiday on a rest day (e.g. Sunday) is paid too
+  for (let d = new Date(a + "T12:00"), e = new Date(b + "T12:00"); d <= e; d.setDate(d.getDate() + 1)) if (wd.includes(d.getDay()) || regHol.has(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"))) n++;
   return n;
 }
 
