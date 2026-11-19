@@ -49,9 +49,19 @@ function slipHTML(s, run, sg, copy) {
   if (c.otherDed) D.push(["Other deduction", c.otherDed, W.otherDedNote || "Reason not stated"]);
   if (!(c.dedList || []).length && !c.otherDed && c.other) D.push(["Loans / other", c.other, "Loans / other deductions"]);
   if (c.caDed) D.push(["Cash advance", c.caDed, `Repayment; balance ${P(c.caBal)} to ${P(c.caAfter)}`]);
-  const ci = c.classInfo, clsNote = ci ? `Class check: scheduled ${fmtHMc(ci.schedMin)} hrs, taught ${fmtHMc(ci.mins)} hrs${ci.lateMin ? `, ${fmtHM(ci.lateMin)} late (not paid)` : ""}${ci.absent ? `, ${ci.absent} class${ci.absent === 1 ? "" : "es"} absent (not paid)` : ""}${ci.noRecord ? `, ${ci.noRecord} class${ci.noRecord === 1 ? "" : "es"} with no class check (not paid)` : ""}. Teachers are paid only for the hours taught, so these are not deductions.` : "";
+  const ci = c.classInfo;
+  let lateAdd = 0;
+  if (c.perHour && ci) {
+    const t12 = (x) => { if (!x) return ""; const [h, i] = String(x).split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(i || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+    const dy = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const eo = +ci.earlyOutMin || 0, lm = +ci.lateMin || 0;
+    if (lm > 0) { const amt = r2(lm / 60 * c.rate); lateAdd += amt; D.push(["Late (" + fmtHM(lm) + ")", amt, "", (ci.lateList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min late)`).join("; ")]); }
+    if (eo > 0) { const amt = r2(eo / 60 * c.rate); lateAdd += amt; D.push(["Early out (" + fmtHM(eo) + ")", amt, "", (ci.earlyOutList || []).map((x) => `${dy(x.d)}: class ends ${t12(x.end)}, out ${t12(x.out)} (${x.min} min early)`).join("; ")]); }
+    if ((+ci.earlyInMin || 0) > 0) D.push(["Early in (" + fmtHM(ci.earlyInMin) + ") - no deduction", 0, "", (ci.earlyInList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min early)`).join("; ")]);
+    const bi = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi >= 0 && lateAdd > 0) E[bi] = [E[bi][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + lm + eo)} hrs`), E[bi][1] + lateAdd];
+  }
   const n = Math.max(E.length, D.length, 6); let body = "";
-  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[2] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[2])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
+  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[3] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[3])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
   const RL = c.perHour ? ["Rate per hour", "Hours taught (H:MM)", "Days present", "Days absent", "No. of holidays", "Overtime"] : ["Rate per day", "Paid days", "Days present", "Days absent", "No. of holidays", "Overtime"];
   const pres = c.presentDays === null || c.presentDays === undefined ? "-" : c.presentDays;
   const RV = c.perHour ? [P(c.rate), fmtHMc(Math.round(c.hours * 60)), pres, "-", c.holidays || 0, fmtHMd(c.otHours * 60)] : [P(c.dailyRate), c.paidDays, pres, c.absentDays, c.holidays || 0, fmtHMd(c.otHours * 60)];
@@ -64,9 +74,9 @@ function slipHTML(s, run, sg, copy) {
   <tr>${RL.map((x) => `<th colspan="2">${x}</th>`).join("")}</tr>
   <tr>${RV.map((x) => `<td colspan="2" class="c">${x}</td>`).join("")}</tr>
   <tr><th colspan="3">EARNINGS</th><th colspan="2">Amount</th><th colspan="5">DEDUCTIONS (and what each is for)</th><th colspan="2">Amount</th></tr>${body}
-  <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed)}</td></tr></table>
+  <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross + lateAdd)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed + lateAdd)}</td></tr></table>
   ${(c.caBal > 0 || c.caDed > 0) ? `<table class="ca"><tr><th colspan="12">CASH ADVANCE BALANCE</th></tr><tr>${cell("Balance before this pay", P(c.caBal), 4)}${cell("Deducted this pay", P(c.caDed), 4)}${cell("Remaining balance", P(c.caAfter), 4)}</tr></table>` : ""}
-  ${clsNote ? `<div class="dr" style="text-align:left;margin:3px 0">${esc(clsNote)}</div>` : ""}
+  
   <div class="net">NET PAY: ${P(c.net)}</div>
   <div class="sg"><div>Received by<i>Employee</i></div>${sg.map((g) => `<div><b>${esc(g.name || "")}</b><br>${esc(g.position || "")}<i>${esc(g.label || "")}</i></div>`).join("")}</div>
   <div class="dr">${run.status === "Draft" ? "DRAFT - not final. " : ""}Generated ${new Date().toLocaleString("en-US")}</div></div>`;

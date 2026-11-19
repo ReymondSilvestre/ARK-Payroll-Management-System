@@ -38,15 +38,15 @@ function cmCounted(rec, e, date) {
   const cb = ((ST.settings.dtr || {}).classBio || {}), s = cmMin(rec.start), en = cmMin(rec.end), grace = e ? +graceOf(e, cmDow(date)) || 0 : 0, inn = cmMin(rec.in);
   const from = inn <= s + grace ? s : inn; let to, noOut = false;
   if (rec.out) to = Math.min(cmMin(rec.out), en); else { noOut = true; to = cb.noOut === "none" ? from : en; }
-  return { mins: Math.max(0, to - from), late: Math.max(0, inn - s - grace), noOut };
+  return { mins: Math.max(0, to - from), late: Math.max(0, inn - s - grace), noOut, earlyIn: Math.max(0, s - inn), earlyOut: rec.out ? Math.max(0, en - cmMin(rec.out)) : 0 };
 }
 /** Hours of one teacher between two dates from the class check. has = the teacher has classes in the Class schedule (otherwise the DTR hours are used). */
 function clsHoursOf(e, from, to, classes, att) {
   const D = ST.settings.dtr || {}, hol = new Set((D.holidays || []).map((h) => h.date)), wfh = new Set((D.wfhDays || []).map((h) => h.date)), today = cmYmd(new Date());
   const mine = (classes || []).filter((c) => String(c.empId) === String(e.id)), recs = (att || []).filter((a) => String(a.empId) === String(e.id) && a.date >= from && a.date <= to);
-  const o = { has: mine.some((c) => c.active) || recs.length > 0, mins: 0, schedMin: 0, lateMin: 0, absent: 0, noRecord: 0, noOut: 0, held: 0, presentDates: [] }, by = {}, pd = new Set();
+  const o = { has: mine.some((c) => c.active) || recs.length > 0, mins: 0, schedMin: 0, lateMin: 0, lateList: [], earlyInMin: 0, earlyInList: [], earlyOutMin: 0, earlyOutList: [], absent: 0, noRecord: 0, noOut: 0, held: 0, presentDates: [] }, by = {}, pd = new Set();
   recs.forEach((a) => { by[a.date + "|" + a.classId] = a; if (hol.has(a.date) && D.holPunch !== true) return; if (a.status === "Absent") { o.absent++; return; } if (!a.in) return;
-    const r = cmCounted(a, e, a.date); o.mins += r.mins; o.lateMin += r.late; if (r.noOut) o.noOut++; o.held++; pd.add(a.date); });
+    const r = cmCounted(a, e, a.date); o.mins += r.mins; o.lateMin += r.late; if (r.late > 0) o.lateList.push({ d: a.date, start: a.start, inn: a.in, min: r.late }); if (r.earlyIn > 0) { o.earlyInMin += r.earlyIn; o.earlyInList.push({ d: a.date, start: a.start, inn: a.in, min: r.earlyIn }); } if (r.earlyOut > 0) { o.earlyOutMin += r.earlyOut; o.earlyOutList.push({ d: a.date, end: a.end, out: a.out, min: r.earlyOut }); } if (r.noOut) o.noOut++; o.held++; pd.add(a.date); });
   for (let d = from; d <= to && d <= today; d = addDay(d)) { if (hol.has(d)) continue; const dow = cmDow(d);
     mine.filter((c) => c.active && c.days.includes(dow)).forEach((c) => { const r = by[d + "|" + c.id], wf = wfh.has(d) && !(r && r.in); if (wf) return; o.schedMin += Math.max(0, cmMin(c.end) - cmMin(c.start)); if (!r || (!r.in && r.status !== "Absent")) o.noRecord++; }); }
   o.presentDates = [...pd].sort(); return o;
