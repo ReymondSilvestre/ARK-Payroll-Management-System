@@ -29,9 +29,10 @@ function slipHTML(s, run, sg, copy) {
   const c = s.calc, e = (ST.employees || []).find((x) => String(x.no) === String(s.no)) || {}, P = (n) => "\u20B1" + money(n), dash = (v) => (v === undefined || v === null || v === "" ? "-" : esc(v));
   const hpd = +(ST.settings && ST.settings.hoursPerDay) || 8, rate = c.perHour ? c.rate : (c.dailyRate ? c.dailyRate / hpd : 0);
   let pd = run.payDate || ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(pd)); pd = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(pd); pd = isNaN(pd) ? esc(run.payDate || "-") : pd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : "Basic pay", c.basic]];
+  const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : "Regular Pay", c.basic]];
+  if (c.holPay) E.push([c.holFixed ? "Holiday pay (fixed)" : "Holiday pay", c.holPay]);   // shown right below Regular Pay
   if ((c.allowList || []).length) c.allowList.forEach((a) => a.amount && E.push([(a.label || "Allowance") + (a.count !== undefined ? ` (${a.count} day${a.count === 1 ? "" : "s"} x ${P(a.daily)})` : ""), a.amount])); else if (c.allow) E.push(["Allowances", c.allow]);
-  if (c.ot) E.push(["Overtime" + (c.otHours > 0 ? " (" + fmtHMc(Math.round(c.otHours * 60)) + " hrs)" : ""), c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.holPay) E.push([c.holFixed ? "Holiday pay (fixed)" : "Holiday pay", c.holPay]); if (c.wfhPay) E.push([c.perHour ? (c.wfhFixed ? "WFH / Async class pay (fixed per day)" : "WFH / Async class pay (per hour)") : "WFH / Async class pay (per day)", c.wfhPay]);
+  if (c.ot) E.push(["Overtime" + (c.otHours > 0 ? " (" + fmtHMc(Math.round(c.otHours * 60)) + " hrs)" : ""), c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.wfhPay) E.push([c.perHour ? (c.wfhFixed ? "WFH / Async class pay (fixed per day)" : "WFH / Async class pay (per hour)") : "WFH / Async class pay (per day)", c.wfhPay]);
   /* DEDUCTIONS: every line says WHAT it is for (D = [label, amount, reason]) */
   const W = c.why || {}, fd = (d) => { const x = new Date(String(d).slice(0, 10) + "T12:00"); return isNaN(x) ? String(d) : x.toLocaleDateString("en-US", { month: "short", day: "numeric" }); }, dl = (arr, f, max) => { const a = (arr || []).map(f); return a.slice(0, max || 8).join(", ") + (a.length > (max || 8) ? ` +${a.length - (max || 8)} more` : ""); };
   const D = [];

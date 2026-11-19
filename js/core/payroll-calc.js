@@ -79,6 +79,16 @@ function yearlyTax(taxable, brackets) {
   return taxable <= brackets[0].over ? 0 : r2((row.base || 0) + (taxable - row.over) * (row.rate / 100));
 }
 
+/** Paid days of a pay period = the working days (Settings > work days, Mon-Sat by default) from its first to its last date, holidays included because they are paid.
+    Depends on the cut-off: 1st - 15th, 16th - end of month, 26th - 10th, 11th - 25th or a custom period. Without dates it falls back to workDays / number of pays. */
+function paidDaysOf(period, S, div) {
+  const a = period && period.start, b = period && period.end;
+  if (!a || !b || a > b) return r2((+S.workDays || 0) / (div || 1));
+  const wd = ((S.dtr && S.dtr.workDays) || [1, 2, 3, 4, 5, 6]).map(Number); let n = 0;
+  for (let d = new Date(a + "T12:00"), e = new Date(b + "T12:00"); d <= e; d.setDate(d.getDate() + 1)) if (wd.includes(d.getDay())) n++;
+  return n;
+}
+
 /** The monthly government contributions for a monthly basic pay (employee share and employer share). */
 function monthlyContrib(basicMonthly, info, S) {
   const out = { sssEe: 0, sssEr: 0, phicEe: 0, phicEr: 0, hdmfEe: 0, hdmfEr: 0 }, fixedOf = (g) => g.mode !== "percent";      // mode "fixed" is the default
@@ -167,7 +177,7 @@ function computeSlip(info, inp, S, period) {
   const gross = r2(basic + allow + ot + otherEarn + holPay + wfhPay), totalDed = r2(absent + late + holDed + wfhDed + sssF + phicF + hdmfF + taxF + other + caDed), net = r2(gross - totalDed);
   return { cat: categoryOf(info), perHour, rate, hours, basic, allow, allowList, ot, otherEarn, gross, absent, late, sssEe: sssF, phicEe: phicF, hdmfEe: hdmfF, sssEr, phicEr, hdmfEr, tax: taxF, other, dedList, otherDed, caDed, caBal, caAfter, manual, auto: { sssEe, phicEe, hdmfEe, tax }, totalDed, net, absentDays, leaveDays: +i.leaveDays || 0,
     holidays: hl.length, holWorked: hl.filter((h) => h.worked).length, holPay, holDed, holFixed, wfhPay, wfhDed, wfhFixed, wfhDays: wl.length, wfhList: wl.map((w) => ({ date: w.date, label: w.label || "", type: w.type || "wfh", hours: hasN(w.hours) ? +w.hours : null, worked: !!w.worked })), holList: hl.map((h) => ({ date: h.date, label: h.label || "", type: h.type || "regular", worked: !!h.worked })),
-    dailyRate: perHour ? 0 : r2(daily), paidDays: r2((+S.workDays || 0) / div), otHours: r2(+i.otHours || 0), lateMin: r2(+i.lateMin || 0), presentDays: i.dtr && i.dtr.present !== undefined && i.dtr.present !== null ? +i.dtr.present : null,
+    dailyRate: perHour ? 0 : r2(daily), paidDays: paidDaysOf(period, S, div), otHours: r2(+i.otHours || 0), lateMin: r2(+i.lateMin || 0), presentDays: i.dtr && i.dtr.present !== undefined && i.dtr.present !== null ? +i.dtr.present : null,
     /* WHY each deduction was made (printed on the payslip) */
     why: { absentList: i.absentList || null, lateList: i.lateList || null, halfList: i.halfList || null, underList: i.underList || null, leaveList: i.leaveList || [], otherDedNote: String(i.otherDedNote || "").trim(), holDedList, wfhDedList, taxWhy, semi, half: period.half, sssWhen: S.sss.when, phicWhen: S.phic.when, hdmfWhen: S.hdmf.when, manualSss: manual.sss, manualPhic: manual.phic, manualHdmf: manual.hdmf, manualTax: manual.tax, absentTyped: i.absentList === null, lateTyped: i.lateList === null },
     classInfo: i.classInfo || null };
