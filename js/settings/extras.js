@@ -42,7 +42,7 @@ function collectExtras() {
   S.dtr.grace = gr; S.dtr.graceStaff = gr.staff[1]; S.dtr.graceMin = gr.staff[1]; S.dtr.graceTeacher = gr.teacher[1];
   const og = {}, op = {}; document.querySelectorAll(".otg").forEach((x) => { og[x.dataset.g] = x.checked; }); document.querySelectorAll("[data-oe]").forEach((r) => { const k = $(".otw", r).value; if (k) op[r.dataset.oe] = k; });
   S.dtr.ot = { groups: og, people: op, startMin: Math.max(0, +v("ot1") || 0), blockMin: Math.max(1, +v("ot2") || 60), roundFrom: v("ot6") === "" || isNaN(+v("ot6")) ? 30 : Math.max(0, +v("ot6")), minMin: Math.max(0, +v("ot3") || 0), maxHrs: Math.max(0, +v("ot4") || 0), auto: $("#ot5").checked };
-  S.dtr.late = { countFrom: "beyond", round: v("lt2"), blockMin: Math.max(1, +v("lt3") || 1), deduct: $("#lt4").checked };
+  S.dtr.late = { countFrom: "beyond", round: v("lt2"), blockMin: Math.max(1, +v("lt3") || 1), deduct: $("#lt4").checked, hourOn: !$("#lt5") || $("#lt5").value !== "0", fromStaff: $("#lt6") && v("lt6") !== "" && !isNaN(+v("lt6")) ? Math.max(0, +v("lt6")) : 30, fromTeacher: $("#lt7") && v("lt7") !== "" && !isNaN(+v("lt7")) ? Math.max(0, +v("lt7")) : 16 };
   S.dtr.hrsBlock = document.getElementById("hb1") ? Math.max(0, +v("hb1") || 0) : 30;
   S.dtr.early = { on: !document.getElementById("ea1") || document.getElementById("ea1").checked, inMin: Math.max(1, +v("ea2") || 1), outMin: Math.max(1, +v("ea3") || 1) };
   S.dtr.teacher = { lateDeduct: !document.getElementById("tl1") || document.getElementById("tl1").checked, earlyOutDeduct: !document.getElementById("tl2") || document.getElementById("tl2").checked };

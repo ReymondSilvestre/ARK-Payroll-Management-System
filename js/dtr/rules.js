@@ -93,6 +93,16 @@ function lateMinutes(inn, S0, grace) {
   return Math.max(1, R);
 }
 
+/** Late counted per hour, same idea as overtime (Settings > Late computation): the minutes past the official time in are counted in whole hours.
+    Staff / admins: 30-59 min late = 1 hr. Teachers: 16-59 min late = 1 hr. The minutes past the last full hour count as one more hour only from that minute (staff 30, teachers 16):
+    e.g. staff 45 min = 1 hr, 1 hr 20 min = 1 hr, 1 hr 40 min = 2 hrs. Below the start minute = 0. Switch off (hourOn = false) = exact minutes as before.
+    x = minutes late counted from the official time in (not from the end of the grace period). Returns minutes (a multiple of 60). */
+function lateHourMin(e, x) {
+  const L = ST.settings.dtr.late || {}; if (L.hourOn === false) return Math.max(0, x);
+  const fm = categoryOf(e) === "teacher" ? +(L.fromTeacher ?? 16) : +(L.fromStaff ?? 30), rem = x % 60;
+  return Math.floor((x + 1e-9) / 60) * 60 + (fm > 0 && rem >= fm - 1e-9 ? 60 : 0);
+}
+
 /** Minutes deducted for late: none when switched off, otherwise rounded up to the block set in Settings (1 = every minute). */
 function lateDeductMin(S, m) { const L = (S.dtr && S.dtr.late) || {}; if (L.deduct === false || !m) return 0; const b = Math.max(1, +L.blockMin || 1); return Math.ceil(m / b) * b; }
 

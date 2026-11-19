@@ -33,7 +33,7 @@ function dtrCalc(e, from, to) {
       if (ov) { r.inn = ov.in ?? null; r.out = ov.out ?? null; r.edited = true; }   // time typed by hand in the DTR
       else if (p.length > 1 && p[p.length - 1] - p[0] >= 10) { r.inn = p[0]; r.out = p[p.length - 1]; }   // two scans a few minutes apart are one scan
       else if (p[0] < MID) r.inn = p[0]; else r.out = p[0];
-      if (wd && r.inn !== null && !lv) { const gr = graceOf(e, new Date(d + "T12:00").getDay()); r.late = r.inn > S0 + gr ? lateMinutes(r.inn, S0, gr) : 0; }
+      if (wd && r.inn !== null && !lv) { const gr = graceOf(e, new Date(d + "T12:00").getDay()); if (r.inn > S0 + gr) { r.lateRaw = lateMinutes(r.inn, S0, 0); r.late = lateHourMin(e, r.lateRaw); } }   // late is counted per whole hour like overtime: staff 30-59 min = 1 hr, teachers 16-59 min = 1 hr (r.lateRaw = the actual minutes late from the official time in)
       /* EARLY: time in before the scheduled time in (teachers: their own Time in / Time out from the Teacher Hours menu), or time out before the scheduled time out. Reported only (Settings > Auto late & overtime), nothing is deducted. */
       { const EA = D.early || {}; if (EA.on !== false && wd && !isH && !lv && !isW) { const ei = Math.max(1, +(EA.inMin ?? 1) || 1), eo = Math.max(1, +(EA.outMin ?? 1) || 1); if (r.inn !== null && S0 - r.inn >= ei - 1e-9) r.early = Math.floor(S0 - r.inn + 1e-9); if (r.out !== null && E0 - r.out >= eo - 1e-9) r.earlyOut = Math.floor(E0 - r.out + 1e-9); } }
       if (r.inn !== null && r.out !== null) {
@@ -49,7 +49,8 @@ function dtrCalc(e, from, to) {
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
       if (SC.sat && wd && !isH) r.note = (r.note ? r.note + "; " : "") + "Saturday half day (paid 1 day)";
-      if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late";
+      if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late " + fmtHMc(r.late) + (r.lateRaw && r.lateRaw !== r.late ? " (" + r.lateRaw + " min in)" : "");
+      else if (r.lateRaw) r.note = (r.note ? r.note + "; " : "") + "Late " + r.lateRaw + " min (not counted)";
       if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);
       if (r.earlyOut) r.note = (r.note ? r.note + "; " : "") + "Early out " + fmtHM(r.earlyOut);
       if (r.st === "absent") o.absent++;
