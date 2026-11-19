@@ -7,6 +7,9 @@
 /** Settings saved before: late and overtime are counted in exact minutes (no 30-minute blocks). Saving the Settings afterwards keeps whatever you choose. */
 function minutesMigrate() { const D = ST.settings.dtr; if (D.minV >= 1) return; D.ot = { ...(D.ot || {}), startMin: 0, blockMin: 1, minMin: 0 }; D.late = { ...(D.late || {}), blockMin: 1 }; D.minV = 1; }
 
+/** Overtime is counted in whole hours: minutes 31 to 59 count as one more hour, 1 to 30 are not counted (1 hr 30 min = 1 hr, 1 hr 31 min = 2 hrs), set once. Changing "Counted in blocks of" under Settings > Overtime afterwards is kept. */
+function otHourMigrate() { const D = ST.settings.dtr; if (D.otHourV >= 3) return; D.ot = { ...(D.ot || {}), blockMin: 60, roundFrom: 31 }; D.otHourV = 3; }
+
 function daysMigrate() {
   const S = ST.settings, D = S.dtr; if (D.daysV >= 2) return;
   D.workDays = [1, 2, 3, 4, 5, 6]; D.restDayAsOt = true; D.daysV = 2; if (+S.workDays === 22) S.workDays = 26;

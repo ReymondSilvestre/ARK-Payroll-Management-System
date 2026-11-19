@@ -24,7 +24,7 @@ function showLogin() {
 }
 
 async function load() {
-  const b = await api("bootstrap"); ST.settings = mergeSettings(b.settings); daysMigrate(); minutesMigrate(); phAutoFill(); ST.employees = b.employees; ST.runs = b.runs; ST.sheet = ""; ST.backup = b.backup || ""; ST.leaves = b.leaves || [];
+  const b = await api("bootstrap"); ST.settings = mergeSettings(b.settings); daysMigrate(); minutesMigrate(); otHourMigrate(); phAutoFill(); ST.employees = b.employees; ST.runs = b.runs; ST.sheet = ""; ST.backup = b.backup || ""; ST.leaves = b.leaves || [];
   if (!ST.user) ST.user = JSON.parse(localStorage.getItem("pms.user") || "null"); else localStorage.setItem("pms.user", JSON.stringify(ST.user));
   shell();
 }

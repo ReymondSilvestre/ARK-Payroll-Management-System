@@ -41,14 +41,14 @@ function dtrCalc(e, from, to) {
         { const HB = Math.max(0, +(D.hrsBlock ?? 30) || 0); if (HB > 1) r.hrs = Math.floor(Math.max(0, mins) / HB + 1e-9) * HB / 60; }   // hours worked are counted in blocks (default 30 min): 8 hrs 20 min = 8:00, 8 hrs 45 min = 8:30; the excess minutes are not counted
         if (TH > 0) r.hrs = D.teacherHrMode === "cap" ? Math.min(r.hrs, TH) : TH;   // scheduled hours of the day
         const dow = new Date(d + "T12:00").getDay(), spOt = D.attOt !== false && (isH || isW);   // holiday / WFH with attendance: whole time worked is overtime. Saturday is a regular work day (never overtime by itself)
-        if (spOt && otAllowed(e)) { r.ot = Math.round(r.hrs * 60); r.note = isH ? "Holiday - overtime" : "WFH - overtime"; } else if (wd) { r.ot = SC.sat ? (SC.sat.otAuto && otAllowed(e) ? otMinutes(r.out - SC.sat.otFromMin) : 0) : (otAllowed(e) ? otMinutes(r.out - E0) : 0); }   // Saturday half day: overtime only from 1:00 PM and only when allowed (filed in the Overtime File, or automatic for people allowed overtime) else if (D.restDayAsOt !== false && otAllowed(e)) { r.ot = Math.round(r.hrs * 60); r.note = "Rest day - overtime"; } else r.note = "Rest day - not counted";
+        if (spOt && otAllowed(e)) { r.ot = otFloor(Math.round(r.hrs * 60)); r.note = isH ? "Holiday - overtime" : "WFH - overtime"; } else if (wd) { r.ot = SC.sat ? (SC.sat.otAuto && otAllowed(e) ? otMinutes(r.out - SC.sat.otFromMin) : 0) : (otAllowed(e) ? otMinutes(r.out - E0) : 0); }   // Saturday half day: overtime only from 1:00 PM and only when allowed (filed in the Overtime File, or automatic for people allowed overtime) else if (D.restDayAsOt !== false && otAllowed(e)) { r.ot = Math.round(r.hrs * 60); r.note = "Rest day - overtime"; } else r.note = "Rest day - not counted";
       } else if (wd && !isH && !lv && !isW) {   // a missing punch: Settings decides if it means absent, half day or nothing
         const miss = r.inn === null ? "no time in" : "no time out", rule = (r.inn === null ? D.noInRule : D.noOutRule) || (r.inn === null ? "absent" : "half"), W = { absent: "Absent", half: "Half day" };
         r.why = miss; r.note = miss.charAt(0).toUpperCase() + miss.slice(1);
         if (W[rule]) { r.st = rule; r.note += " - " + W[rule]; }
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
-      if (r.early && categoryOf(e) === "teacher" && tchOpt().earlyInOt && otAllowed(e)) { r.ot += r.early; r.note = (r.note ? r.note + "; " : "") + "Early in counted as overtime"; }   // teachers: only when the switch in Settings says an early time in is overtime (default: never)
+      if (r.early && categoryOf(e) === "teacher" && tchOpt().earlyInOt && otAllowed(e)) { r.ot += otFloor(r.early); r.note = (r.note ? r.note + "; " : "") + "Early in counted as overtime"; }   // teachers: only when the switch in Settings says an early time in is overtime (default: never)
       if (SC.sat && wd && !isH) r.note = (r.note ? r.note + "; " : "") + "Saturday half day (paid 1 day)";
       if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late";
       if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);

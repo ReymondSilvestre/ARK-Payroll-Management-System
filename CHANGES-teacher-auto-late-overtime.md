@@ -20,3 +20,8 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 - Staff / admin payslip: "Half day (N days)" is now its own deduction line (days from the DTR, x half-day value in Settings x daily rate). "Absences" no longer includes them, the total deduction is the same.
 - "Undertime (H:MM) - no deduction" is listed with each day, the time out and the minutes early. Undertime is shown only; nothing is deducted for it.
 - Files: js/pages/payroll.js, js/core/payroll-calc.js, js/pages/payslips.js. No change to backend/Code.gs.
+
+## Overtime counted per hour: minutes 31-59 count as 1 hour
+- Overtime is counted in whole hours. The minutes past the last full hour count as one more hour only from minute 31 (1 hr 30 min = 1 hr, 1 hr 31 min to 1 hr 59 min = 2 hrs, 1-30 min alone = 0).
+- Settings > Overtime: "Counted in blocks of (minutes)" = 60 and new "Minutes of the hour from which a full hour counts" = 31 (0 = the excess minutes are never counted). Set once for saved settings; later changes are kept.
+- Applies to late time out, holiday / WFH work and (teachers) early-in overtime. Overtime typed in the Overtime File is paid as filed.

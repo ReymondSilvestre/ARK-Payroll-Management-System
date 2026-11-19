@@ -106,8 +106,17 @@ const hmParse = (t) => { t = String(t ?? "").trim(); if (t === "") return ""; co
 const fmtHM0 = (m) => (Math.round(+m || 0) > 0 ? fmtHM(m) : ""), fmtHMd = (m) => (Math.round(+m || 0) > 0 ? fmtHM(m) : "-");
 
 /** Overtime minutes from a time out: only after the start minutes, in whole blocks, with a minimum and a daily cap. */
+/** Overtime rounding (Settings > Overtime): counted in blocks (default 1 hour). The minutes past the last full block count as one more block only from "roundFrom" minutes (default 31):
+    1 hr 30 min = 1 hr, 1 hr 31 min to 1 hr 59 min = 2 hrs, 25 min = 0. roundFrom 0 = the excess minutes are never counted. */
+function otRound(x) {
+  const O = ST.settings.dtr.ot || {}, bl = Math.max(1, +(O.blockMin ?? 60) || 1), rf = Math.max(0, +(O.roundFrom ?? 31) || 0), rem = x % bl;
+  return Math.floor((x + 1e-9) / bl) * bl + (rf > 0 && rem >= rf - 1e-9 ? bl : 0);
+}
+const otFloor = otRound;   // holiday / WFH work and early-in overtime use the same rounding
+
+/** Overtime minutes from a time out: only after the start minutes, rounded as above, with a minimum and a daily cap. */
 function otMinutes(x) {
-  const O = ST.settings.dtr.ot || {}, st = +(O.startMin ?? 0) || 0, bl = Math.max(1, +(O.blockMin ?? 1) || 1); if (x < st || x < 1e-9) return 0;
-  let m = Math.floor((x + 1e-9) / bl) * bl; if (m < (+O.minMin || 0)) return 0; if (+O.maxHrs > 0) m = Math.min(m, O.maxHrs * 60); return m;
+  const O = ST.settings.dtr.ot || {}, st = +(O.startMin ?? 0) || 0; if (x < st || x < 1e-9) return 0;
+  let m = otRound(x); if (m < 1 || m < (+O.minMin || 0)) return 0; if (+O.maxHrs > 0) m = Math.min(m, O.maxHrs * 60); return m;
 }
 
