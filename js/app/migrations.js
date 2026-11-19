@@ -15,3 +15,12 @@ function daysMigrate() {
   D.workDays = [1, 2, 3, 4, 5, 6]; D.restDayAsOt = true; D.daysV = 2; if (+S.workDays === 22) S.workDays = 26;
 }
 
+
+/** Saturday half day: Maintenance and Security are OFF by default (they work their own shift). Done once for settings saved before this; ticking them again afterwards and pressing Save settings is kept. */
+function satMigrate() {
+  const D = ST.settings.dtr, H = D.satHalf; if (!H || H.satV >= 1) return;
+  const def = ["Maintenance", "Security"];
+  H.off = [...new Set([...(H.off || []), ...def])];
+  H.depts = (H.depts || []).filter((x) => !def.some((d) => deptLike(x, d)));
+  H.satV = 1;
+}

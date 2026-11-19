@@ -9,7 +9,7 @@ function satHTML(S) {
   // every department of the employees, plus any saved department that no employee has (yet)
   const names = new Map(); emps.forEach((e) => { const d = String(e.dept || "").trim(); if (d && !names.has(d.toLowerCase())) names.set(d.toLowerCase(), d); });
   (H.depts || []).forEach((d) => { d = String(d).trim(); if (d && ![...names.values()].some((n) => deptLike(n, d))) names.set(d.toLowerCase(), d); });
-  const list = [...names.values()].sort((a, b) => a.localeCompare(b)), isOn = (n) => (H.depts || []).some((x) => deptLike(n, x));
+  const list = [...names.values()].sort((a, b) => a.localeCompare(b)), isOn = (n) => (H.depts || []).some((x) => deptLike(n, x)) && !(H.off || []).some((x) => deptLike(n, x));
   const people = emps.slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   return `<div data-sp="sat" ${spHide("sat")}><h3>Saturday half day</h3>
   <p class="muted">Some departments only work half a day on Saturday, but the pay is still <b>one full day</b> (the monthly pay already includes it, so nothing is deducted). On those Saturdays the DTR uses the time below instead of the usual time in / out: late, early out and absent are checked against it.</p>
@@ -30,5 +30,5 @@ function satCollect() {
   if (!document.getElementById("sat_on")) return;
   const S = ST.settings, v = (id) => $("#" + id).value, people = {};
   document.querySelectorAll("[data-satp]").forEach((r) => { const k = $(".satw", r).value; if (k) people[r.dataset.satp] = k; });
-  S.dtr.satHalf = { on: $("#sat_on").checked, start: v("sat_s") || "08:00", end: v("sat_e") || "12:00", otFrom: v("sat_o") || "13:00", otMode: v("sat_m") === "auto" ? "auto" : "filed", depts: [...document.querySelectorAll(".satd")].filter((c) => c.checked).map((c) => c.value), people };
+  S.dtr.satHalf = { on: $("#sat_on").checked, start: v("sat_s") || "08:00", end: v("sat_e") || "12:00", otFrom: v("sat_o") || "13:00", otMode: v("sat_m") === "auto" ? "auto" : "filed", depts: [...document.querySelectorAll(".satd")].filter((c) => c.checked).map((c) => c.value), off: [...document.querySelectorAll(".satd")].filter((c) => !c.checked).map((c) => c.value), satV: 1, people };
 }
