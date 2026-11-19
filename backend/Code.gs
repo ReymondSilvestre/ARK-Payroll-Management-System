@@ -27,12 +27,13 @@ var TABS = {
   'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'],
   'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks', 'Fixed holiday pay (per day)', 'Fixed WFH pay (per day)'],   // one row per teacher per work day (written at every settings save)
   'Class Schedule': ['ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Days', 'Start', 'End', 'Active'],   // the classes of each teacher (Days = 1,2,3 = Mon, Tue, Wed ... 0 = Sun)
+  'Settings Log': ['Changed at', 'Changed by', 'Role', 'Change ID', 'Section', 'Setting', 'Action', 'Old value', 'New value'],   // one row per changed setting, written at every settings save (Change ID = same save)
   'Class Attendance': ['Date', 'Class ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Scheduled start', 'Scheduled end', 'Time in', 'Time out', 'Status', 'Remarks', 'Checked by', 'Checked at']   // what the Class Monitor recorded, one row per class per date
 };
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
 var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave', 'clsReport'];   // what a Class Monitor account may call: the class check, the class schedule and the class-check DTR, nothing else
 var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v10-2026-11-19a';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var SCHEMA_V = 'v11-2026-11-19b';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -97,6 +98,7 @@ function ensureSchema_(ss) {
       if (sh.getMaxColumns() < 34) sh.insertColumnsAfter(sh.getMaxColumns(), 34 - sh.getMaxColumns());
       sh.getRange(1, 34).setValue('Photo').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');
     }
+    if (n === 'Settings Log') [1, 4, 8, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // times and values stay as typed
     if (n === 'Overtime File') [1, 2, 3, 5, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Teacher Hours' && sh.getRange(1, 9).getValue() !== 'Fixed holiday pay (per day)') sh.getRange(1, 9, 1, 2).setValues([['Fixed holiday pay (per day)', 'Fixed WFH pay (per day)']]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');   // older Teacher Hours tab: add the two fixed-pay columns
     if (n === 'Class Schedule') [1, 2, 3, 7, 8, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
@@ -184,7 +186,9 @@ function doPost(e) {
       var json0 = JSON.stringify(d);
       if (json0.length > 49000) return out_({ ok: false, error: 'The settings are too big for one spreadsheet cell (' + json0.length + ' characters). Remove old holidays or unused shifts.' });
       var r0 = rows_(St).filter(function (r) { return r.Key === 'settings'; })[0];
+      var before0 = null; if (r0) { try { before0 = JSON.parse(r0.Value); } catch (eP) { before0 = null; } }
       if (r0) St.getRange(r0._row, 2).setValue(json0); else St.appendRow(['settings', json0]);
+      try { setLog_(ss, before0, d, me); } catch (eL) { }   // the Settings Log tab: one row per changed setting (a log problem never blocks saving)
       try { thPut_(ss, d); markBackup_(); } catch (eT) { }   // Teacher Hours tab in the database follows the app; the backup report is rebuilt a minute later
       res = true;
     } else if (A === 'saveEmployees') {           // add / edit / bulk upload: matched by Employee No, otherwise by last + first name. One read and one write, photos are never read back.
@@ -327,6 +331,44 @@ function doPost(e) {
 
 /* ===================== helpers: row blocks, runs list, overtime file, backup scheduling ===================== */
 /* Contiguous row groups whose column `col` equals `val`: [[firstRow, count], ...]. Reads ONE column only. */
+/* SETTINGS LOG: every saved change of the settings is written to the 'Settings Log' tab, ONE ROW PER CHANGED SETTING
+   (when, who, section, setting, old value, new value). Rows saved together share a Change ID. The Settings tab itself is unchanged. */
+function flat_(v, path, out) {
+  if (v === null || v === undefined) { out[path] = ''; return out; }
+  if (Object.prototype.toString.call(v) === '[object Array]') {
+    var plain = v.every(function (x) { return x === null || typeof x !== 'object'; });
+    if (plain) { out[path] = v.join(', '); return out; }
+    if (!v.length) { out[path] = ''; return out; }
+    v.forEach(function (x, i) {
+      var key = (x && typeof x === 'object') ? (x.name || x.label || x.date || x.id || x.type || '') : '';
+      flat_(x, path + ' [' + (key !== '' ? key : (i + 1)) + (key !== '' && v.some(function (y, j) { return j !== i && y && (y.name || y.label || y.date || y.id || y.type || '') === key; }) ? ' #' + (i + 1) : '') + ']', out);
+    });
+    return out;
+  }
+  if (typeof v === 'object') {
+    var ks = Object.keys(v);
+    if (!ks.length) { out[path] = ''; return out; }
+    ks.forEach(function (k) { flat_(v[k], path ? path + ' > ' + k : k, out); });
+    return out;
+  }
+  out[path] = String(v); return out;
+}
+function setLog_(ss, before, after, me) {
+  var sh = ss.getSheetByName('Settings Log'); if (!sh) return;
+  var now = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm:ss'), cid = 'S-' + Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyyMMdd-HHmmss') + '-' + uid_().slice(1, 4), rows = [];
+  var cut = function (t) { t = String(t == null ? '' : t); return t.length > 500 ? t.slice(0, 500) + '...' : t; };
+  var put = function (path, act, o, n) { var i = path.indexOf(' > '), sec = i < 0 ? path : path.slice(0, i), nm = i < 0 ? path : path.slice(i + 3); rows.push([now, me.name || '', me.role || '', cid, sec, nm, act, cut(o), cut(n)]); };
+  if (!before) { rows.push([now, me.name || '', me.role || '', cid, '(all)', '(all settings)', 'Created', '', 'First settings save']); }
+  else {
+    var a = flat_(before, '', {}), b = flat_(after, '', {});
+    Object.keys(b).forEach(function (k) { if (!(k in a)) put(k, 'Added', '', b[k]); else if (a[k] !== b[k]) put(k, 'Changed', a[k], b[k]); });
+    Object.keys(a).forEach(function (k) { if (!(k in b)) put(k, 'Removed', a[k], ''); });
+  }
+  if (!rows.length) return;                                    // nothing changed: nothing logged
+  if (rows.length > 300) { var extra = rows.length - 299; rows = rows.slice(0, 299); rows.push([now, me.name || '', me.role || '', cid, '(many)', '(' + extra + ' more changes)', 'Changed', '', 'Too many to list: see the Settings tab']); }
+  var last = Math.max(1, sh.getLastRow());
+  sh.getRange(last + 1, 1, rows.length, 9).setNumberFormat('@').setValues(rows);
+}
 function groups_(sh, col, val) {
   var n = sh.getLastRow() - 1, out = [], i, start = -1, v;
   if (n < 1) return out;
