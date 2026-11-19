@@ -20,7 +20,9 @@ function deptLike(a, b) {
     Overtime on such a Saturday starts at the "OT from" time (1:00 PM) and only when it is allowed that day. Returns null for everybody else. */
 function satHalfOf(e) {
   const H = (ST.settings.dtr || {}).satHalf; if (!H || H.on === false || !e || categoryOf(e) === "teacher") return null;
-  const own = (H.people || {})[e.id]; let yes = own === "yes" ? true : own === "no" ? false : (H.depts || []).some((x) => deptLike(e.dept, x)); if (!yes) return null;
+  const own = (H.people || {})[e.id];
+  if (own !== "yes" && (shiftsOfDept(e).length || ((ST.settings.dtr || {}).empShift || {})[e.id])) return null;   // people on a shift (Maintenance, Security...) work their shift on Saturday too: the half-day Saturday time does not apply to them unless chosen one by one under Exceptions
+  let yes = own === "yes" ? true : own === "no" ? false : (H.depts || []).some((x) => deptLike(e.dept, x)); if (!yes) return null;
   const m = (x, def) => { const [h, mi] = String(x || def).split(":").map(Number); return h * 60 + (mi || 0); };
   return { start: H.start || "08:00", end: H.end || "12:00", otFromMin: m(H.otFrom, "13:00"), otAuto: H.otMode === "auto" };
 }
