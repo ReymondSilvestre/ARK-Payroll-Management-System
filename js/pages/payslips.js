@@ -51,7 +51,7 @@ function slipHTML(s, run, sg, copy) {
   if (c.caDed) D.push(["Cash advance", c.caDed, `Repayment; balance ${P(c.caBal)} to ${P(c.caAfter)}`]);
   const ci = c.classInfo;
   let lateAdd = 0;
-  if (c.perHour && !(ci && ci.lateMin > 0) && c.lateMin > 0) {
+  if (c.perHour && !(ci && ci.lateMin > 0 && ci.lateOn !== false) && c.lateMin > 0) {
     const dy0 = (d) => new Date(String(d).slice(0, 10) + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), amt0 = r2(c.lateMin / 60 * c.rate);
     lateAdd += amt0; D.push(["Late (" + fmtHM(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${x.min} min late`).join("; ")]);
     const bi0 = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi0 >= 0) E[bi0] = [E[bi0][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + c.lateMin)} hrs`), E[bi0][1] + amt0];
@@ -59,7 +59,7 @@ function slipHTML(s, run, sg, copy) {
   if (c.perHour && ci) {
     const t12 = (x) => { if (!x) return ""; const [h, i] = String(x).split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(i || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
     const dy = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    const eo = +ci.earlyOutMin || 0, lm = +ci.lateMin || 0;
+    const eo = ci.earlyOutOn === false ? 0 : (+ci.earlyOutMin || 0), lm = ci.lateOn === false ? 0 : (+ci.lateMin || 0);   // a late / early out that is not deducted (Settings > Teachers) is not shown as a deduction
     if (lm > 0) { const amt = r2(lm / 60 * c.rate); lateAdd += amt; D.push(["Late (" + fmtHM(lm) + ")", amt, "", (ci.lateList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min late)`).join("; ")]); }
     if (eo > 0) { const amt = r2(eo / 60 * c.rate); lateAdd += amt; D.push(["Early out (" + fmtHM(eo) + ")", amt, "", (ci.earlyOutList || []).map((x) => `${dy(x.d)}: class ends ${t12(x.end)}, out ${t12(x.out)} (${x.min} min early)`).join("; ")]); }
     if ((+ci.earlyInMin || 0) > 0) D.push(["Early in (" + fmtHM(ci.earlyInMin) + ") - no deduction", 0, "", (ci.earlyInList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min early)`).join("; ")]);

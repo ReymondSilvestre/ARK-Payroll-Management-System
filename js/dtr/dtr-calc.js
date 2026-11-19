@@ -47,6 +47,7 @@ function dtrCalc(e, from, to) {
         if (W[rule]) { r.st = rule; r.note += " - " + W[rule]; }
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
+      if (r.early && categoryOf(e) === "teacher" && tchOpt().earlyInOt && otAllowed(e)) { r.ot += r.early; r.note = (r.note ? r.note + "; " : "") + "Early in counted as overtime"; }   // teachers: only when the switch in Settings says an early time in is overtime (default: never)
       if (SC.sat && wd && !isH) r.note = (r.note ? r.note + "; " : "") + "Saturday half day (paid 1 day)";
       if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late";
       if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);
