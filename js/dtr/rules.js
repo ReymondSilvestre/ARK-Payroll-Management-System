@@ -81,8 +81,8 @@ function otAllowed(e) {
 /** Teacher-only switches (Settings > Auto late & overtime > Teachers). They are separate from the staff / admin switches.
     lateDeduct: a late time in is not paid (hours count from the time in); OFF = hours count from the class start, late is only reported.
     earlyOutDeduct: an early time out is not paid (hours stop at the time out); OFF = hours count to the class end, early out is only reported.
-    earlyInOt: an early time in is paid as overtime; OFF (default) = an early time in is never overtime. */
-function tchOpt() { const T = (ST.settings.dtr || {}).teacher || {}; return { lateDeduct: T.lateDeduct !== false, earlyOutDeduct: T.earlyOutDeduct !== false, earlyInOt: T.earlyInOt === true }; }
+    An early time in is never overtime and is not paid (fixed rule). */
+function tchOpt() { const T = (ST.settings.dtr || {}).teacher || {}; return { lateDeduct: T.lateDeduct !== false, earlyOutDeduct: T.earlyOutDeduct !== false }; }
 
 /** Is late deducted automatically for this person? Teachers use their own switch, staff and admins the general one. */
 const lateOn = (e) => (categoryOf(e) === "teacher" ? tchOpt().lateDeduct : (((ST.settings.dtr || {}).late || {}).deduct !== false));

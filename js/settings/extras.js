@@ -45,7 +45,7 @@ function collectExtras() {
   S.dtr.late = { countFrom: "beyond", round: v("lt2"), blockMin: Math.max(1, +v("lt3") || 1), deduct: $("#lt4").checked };
   S.dtr.hrsBlock = document.getElementById("hb1") ? Math.max(0, +v("hb1") || 0) : 30;
   S.dtr.early = { on: !document.getElementById("ea1") || document.getElementById("ea1").checked, inMin: Math.max(1, +v("ea2") || 1), outMin: Math.max(1, +v("ea3") || 1) };
-  S.dtr.teacher = { lateDeduct: !document.getElementById("tl1") || document.getElementById("tl1").checked, earlyOutDeduct: !document.getElementById("tl2") || document.getElementById("tl2").checked, earlyInOt: !!document.getElementById("tl3") && !document.getElementById("tl3").checked };
+  S.dtr.teacher = { lateDeduct: !document.getElementById("tl1") || document.getElementById("tl1").checked, earlyOutDeduct: !document.getElementById("tl2") || document.getElementById("tl2").checked };
   S.leaveTypes = [...document.querySelectorAll("[data-lt]")].map((r) => ({ name: $(".ln", r).value.trim(), paid: $(".lp", r).value === "1", days: +$(".ld", r).value || 0, pool: $(".lpool", r).checked })).filter((x) => x.name); S.leaveTotal = isNaN(+v("lv_tot")) || v("lv_tot") === "" ? 7 : +v("lv_tot"); S.unpaidLeave = v("lv_ded") === "1";
 }
 

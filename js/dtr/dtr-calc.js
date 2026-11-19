@@ -37,7 +37,7 @@ function dtrCalc(e, from, to) {
       /* EARLY: time in before the scheduled time in (teachers: their own Time in / Time out from the Teacher Hours menu), or time out before the scheduled time out. Reported only (Settings > Auto late & overtime), nothing is deducted. */
       { const EA = D.early || {}; if (EA.on !== false && wd && !isH && !lv && !isW) { const ei = Math.max(1, +(EA.inMin ?? 1) || 1), eo = Math.max(1, +(EA.outMin ?? 1) || 1); if (r.inn !== null && S0 - r.inn >= ei - 1e-9) r.early = Math.floor(S0 - r.inn + 1e-9); if (r.out !== null && E0 - r.out >= eo - 1e-9) r.earlyOut = Math.floor(E0 - r.out + 1e-9); } }
       if (r.inn !== null && r.out !== null) {
-        const span = r.out - r.inn, mins = span - (span > 300 ? +D.lunchMin || 0 : 0); r.hrs = Math.max(0, mins) / 60;
+        const span = r.out - (wd && !isH && !isW && r.inn < S0 ? S0 : r.inn), mins = span - (span > 300 ? +D.lunchMin || 0 : 0); r.hrs = Math.max(0, mins) / 60;
         { const HB = Math.max(0, +(D.hrsBlock ?? 30) || 0); if (HB > 1) r.hrs = Math.floor(Math.max(0, mins) / HB + 1e-9) * HB / 60; }   // hours worked are counted in blocks (default 30 min): 8 hrs 20 min = 8:00, 8 hrs 45 min = 8:30; the excess minutes are not counted
         if (TH > 0) r.hrs = D.teacherHrMode === "cap" ? Math.min(r.hrs, TH) : TH;   // scheduled hours of the day
         const dow = new Date(d + "T12:00").getDay(), spOt = D.attOt !== false && (isH || isW);   // holiday / WFH with attendance: whole time worked is overtime. Saturday is a regular work day (never overtime by itself)
@@ -48,7 +48,6 @@ function dtrCalc(e, from, to) {
         if (W[rule]) { r.st = rule; r.note += " - " + W[rule]; }
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
-      if (r.early && categoryOf(e) === "teacher" && tchOpt().earlyInOt && otAllowed(e)) { r.ot += otFloor(r.early); r.note = (r.note ? r.note + "; " : "") + "Early in counted as overtime"; }   // teachers: only when the switch in Settings says an early time in is overtime (default: never)
       if (SC.sat && wd && !isH) r.note = (r.note ? r.note + "; " : "") + "Saturday half day (paid 1 day)";
       if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late";
       if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);
