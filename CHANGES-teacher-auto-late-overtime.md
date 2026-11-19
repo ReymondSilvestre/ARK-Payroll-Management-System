@@ -11,3 +11,7 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 - Late is counted only after the teacher's grace period and deducted per whole hour, rounded up, for each class (e.g. grace 15 min, in 20 min late = 5 min late after grace = 1:00 deducted).
 - The payslip Late line shows the deducted hours; the day notes show "(0:05 late after grace, deducted 1:00)".
 - Early out is still deducted by the exact minutes. Teachers paid from DTR hours (no class schedule) are not changed.
+
+## Biometric DTR hours in 30-minute blocks
+- Hours worked from the biometric DTR are counted in blocks of 30 minutes; the excess minutes are not counted (8:45 = 8:30, 8:20 = 8:00).
+- Settings > Auto late & overtime > "Biometric DTR: count hours worked in blocks of (minutes)" (default 30, 0 = exact minutes). Teachers with set Teacher Hours keep their scheduled hours.
