@@ -10,6 +10,20 @@ const addDay = (s, n = 1) => { const d = new Date(s + "T12:00"); d.setDate(d.get
 
 const normNo = (s) => String(s ?? "").trim().replace(/^0+(?=.)/, "").toLowerCase();
 
+/* ---------- Several biometric devices (Building 1, Building 2 ...) ----------
+   A record key is "ID" (old uploads / no device chosen) or "Building 1|ID". The device is part of the key so the same ID number on two devices
+   never mixes two people; the records of one person on different devices are joined by NAME (or linked by hand) in dtrMap() / daysOf(). */
+const devKey = (dev, k) => { dev = String(dev ?? "").replace(/\|/g, " ").trim(); return dev ? dev + "|" + k : k; };
+const keyDev = (k) => { const i = String(k).indexOf("|"); return i > 0 ? String(k).slice(0, i) : ""; };
+const keyId = (k) => { const i = String(k).indexOf("|"); return i > 0 ? String(k).slice(i + 1) : String(k); };
+const keyLabel = (k) => { const id = keyId(k), dv = keyDev(k); return (id.startsWith("n:") ? "(name only)" : id) + (dv ? " - " + dv : ""); };
+/** Which device recorded the punch at minute m on date d for this employee ("" = unknown / no device chosen). */
+function devOf(e, d, m) {
+  const x = dtrMap().byEmp[e.id]; if (!x || m == null) return "";
+  for (const k of x.keys) if (((ST.dtr.days[k] || {})[d] || []).includes(m)) return keyDev(k);
+  return "";
+}
+
 const hm = (n) => n == null ? "" : `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
 
 /* ---------- Biometric record -> employee, matched by NAME (Last name, First name, Initial) ----------
@@ -67,7 +81,7 @@ function dtrMap() {
   const D = ST.dtr, emps = ST.employees; D.names ||= {}; D.link ||= {};
   const P = emps.map((e) => [e, empParts(e)]), byNo = new Map(emps.map((e) => [normNo(e.no), e])), byEmp = {}, unmatched = [];
   for (const k of Object.keys(D.days)) {
-    const nm = D.names[k] || "", man = D.link[k] && emps.find((e) => e.id === D.link[k]), m = !man && nm ? matchName(nm, P) : null, idE = byNo.get(k);
+    const nm = D.names[k] || "", man = D.link[k] && emps.find((e) => e.id === D.link[k]), m = !man && nm ? matchName(nm, P) : null, idE = byNo.get(normNo(keyId(k)));
     let e = null, by = "", warn = "";
     if (man) { e = man; by = "manual"; }
     else if (m && m.e) { e = m.e; by = "name"; }
