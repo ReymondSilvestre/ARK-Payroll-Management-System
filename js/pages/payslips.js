@@ -29,8 +29,12 @@ function slipHTML(s, run, sg, copy) {
   const c = s.calc, e = (ST.employees || []).find((x) => String(x.no) === String(s.no)) || {}, P = (n) => "\u20B1" + money(n), dash = (v) => (v === undefined || v === null || v === "" ? "-" : esc(v));
   const hpd = +(ST.settings && ST.settings.hoursPerDay) || 8, rate = c.perHour ? c.rate : (c.dailyRate ? c.dailyRate / hpd : 0);
   let pd = run.payDate || ""; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(pd)); pd = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(pd); pd = isNaN(pd) ? esc(run.payDate || "-") : pd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : "Regular Pay", c.basic]];
-  if (c.holPay) E.push([c.holFixed ? "Holiday pay (fixed)" : "Holiday pay", c.holPay]);   // shown right below Regular Pay
+  /* Regular Pay = the regular working days of the cut-off; Holiday pay (below it) = the holidays of the cut-off. The monthly pay already covers the holidays, so for fixed-pay people the holidays
+     (holidays x daily rate) are taken out of Regular Pay and shown as Holiday pay, plus any extra for working on a holiday. The gross pay is the same as before. */
+  const hn = c.holidays || 0, split = !c.perHour && !(c.manual && c.manual.basic) && hn > 0 && c.dailyRate > 0, holBase = split ? Math.min(c.basic, r2(hn * c.dailyRate)) : 0,
+    regDays = c.perHour ? null : Math.max(0, r2((c.paidDays || 0) - (split ? hn : 0))), regPay = r2(c.basic - holBase), holAmt = r2(holBase + (c.holPay || 0));
+  const E = [[c.perHour ? `Teaching pay (${fmtHMc(Math.round(c.hours * 60))} hrs x ${P(c.rate)})` : `Regular Pay (${regDays} regular working day${regDays === 1 ? "" : "s"} x ${P(c.dailyRate)})`, regPay]];
+  if (holAmt > 0) E.push([`Holiday pay (${hn} holiday${hn === 1 ? "" : "s"}${c.holFixed ? ", fixed" : ""})`, holAmt]);   // right below Regular Pay
   if ((c.allowList || []).length) c.allowList.forEach((a) => a.amount && E.push([(a.label || "Allowance") + (a.count !== undefined ? ` (${a.count} day${a.count === 1 ? "" : "s"} x ${P(a.daily)})` : ""), a.amount])); else if (c.allow) E.push(["Allowances", c.allow]);
   if (c.ot) E.push(["Overtime" + (c.otHours > 0 ? " (" + fmtHMc(Math.round(c.otHours * 60)) + " hrs)" : ""), c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.wfhPay) E.push([c.perHour ? (c.wfhFixed ? "WFH / Async class pay (fixed per day)" : "WFH / Async class pay (per hour)") : "WFH / Async class pay (per day)", c.wfhPay]);
   /* DEDUCTIONS: every line says WHAT it is for (D = [label, amount, reason]) */
@@ -72,9 +76,9 @@ function slipHTML(s, run, sg, copy) {
   }
   const n = Math.max(E.length, D.length, 6); let body = "";
   for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[3] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[3])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
-  const RL = c.perHour ? ["Rate per hour", "Hours taught (H:MM)", "Days present", "Days absent", "No. of holidays", "Overtime"] : ["Rate per day", "Paid days", "Days present", "Days absent", "No. of holidays", "Overtime"];
+  const RL = c.perHour ? ["Rate per hour", "Hours taught (H:MM)", "Days present", "Days absent", "No. of holidays", "Overtime"] : ["Rate per day", "Paid days (regular working days)", "Days present", "Days absent", "No. of holidays", "Overtime"];
   const pres = c.presentDays === null || c.presentDays === undefined ? "-" : c.presentDays;
-  const RV = c.perHour ? [P(c.rate), fmtHMc(Math.round(c.hours * 60)), pres, "-", c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")] : [P(c.dailyRate), c.paidDays, pres, c.absentDays, c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")];
+  const RV = c.perHour ? [P(c.rate), fmtHMc(Math.round(c.hours * 60)), pres, "-", c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")] : [P(c.dailyRate), regDays + (holAmt > 0 ? `<br><span style="font-weight:400;font-size:9px">Holiday pay: ${P(holAmt)}</span>` : ""), pres, c.absentDays, c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")];
   const cell = (k, v, w) => `<td colspan="${w}"><span class="k">${k}</span><span class="v">${v}</span></td>`;
   return `<div class="slip"><div class="hd"><img src="${LOGO}" alt=""><div><b>${esc(SCHOOL.name)}</b><small>${esc(SCHOOL.address)}<br>Contact: ${esc(SCHOOL.contact)}${ST.settings.tax && ST.settings.tax.employerTin ? `<br>Employer TIN: ${esc(ST.settings.tax.employerTin)}` : ""}<br>Finance - Payroll &middot; <b style="display:inline;font-size:10.5px">${copy || "EMPLOYEE COPY"}</b></small></div></div>
   <h2>PAYSLIP</h2>

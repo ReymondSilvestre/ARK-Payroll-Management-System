@@ -26,13 +26,14 @@ const DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const dowLabel = (days) => [1, 2, 3, 4, 5, 6, 0].filter((d) => (days || []).includes(d)).map((d) => DOW_SHORT[d]).join(", ");
 
-/** The dates of the pay period on which a weekday allowance is paid. "Pay only on days present": only days with a punch in the DTR (i.presentDates); without DTR data, or when switched off, every matching weekday that is not a holiday. */
+/** The dates of the pay period on which a weekday allowance is paid (a.incHol = holidays and WFH days are paid too). "Pay only on days present": only days with a punch in the DTR (i.presentDates); without DTR data, or when switched off, every matching weekday that is not a holiday. */
 function allowDaysIn(a, S, period, i) {
-  const out = [], days = a.days || [], pd = i && Array.isArray(i.presentDates) ? new Set(i.presentDates) : null, hol = new Set(((S.dtr && S.dtr.holidays) || []).map((h) => h.date));
+  const out = [], days = a.days || [], pd = i && Array.isArray(i.presentDates) ? new Set(i.presentDates) : null, hol = new Set(((S.dtr && S.dtr.holidays) || []).map((h) => h.date)), wfh = new Set(((S.dtr && S.dtr.wfhDays) || []).map((h) => h.date));
   if (!period || !period.start || !period.end) return out;
   for (let d = new Date(period.start + "T12:00"), z = new Date(period.end + "T12:00"); d <= z; d.setDate(d.getDate() + 1)) {
     if (!days.includes(d.getDay())) continue;
     const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    if (a.incHol === true && (hol.has(k) || wfh.has(k))) { out.push(k); continue; }   // "Include holidays and WFH days": a ticked weekday that is a holiday or a WFH day is paid even without a punch
     if (a.presentOnly !== false && pd) { if (pd.has(k)) out.push(k); } else if (!hol.has(k)) out.push(k);
   }
   return out;
