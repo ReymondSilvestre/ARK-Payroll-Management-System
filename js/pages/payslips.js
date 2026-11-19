@@ -42,7 +42,7 @@ function slipHTML(s, run, sg, copy) {
     if (abD > 0) parts.push(`${abD} day${abD === 1 ? "" : "s"} absent` + (Array.isArray(aList) && aList.length ? ": " + dl(aList, (x) => `${fd(x.d)} (${x.why})`) : " (entered by payroll)"));
     if (lvD > 0) parts.push(`${lvD} day${lvD === 1 ? "" : "s"} leave without pay` + ((W.leaveList || []).length ? ": " + dl(W.leaveList, (x) => `${x.type || "Leave"} ${fd(x.from)}${x.to !== x.from ? " - " + fd(x.to) : ""}`) : ""));
     D.push([lvD > 0 ? "Absences / unpaid leave" : "Absences", r2(c.absent - halfAmt), parts.join("; ") + ` x ${P(c.dailyRate)} per day`]); }
-  if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHMc(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${fmtHMc(x.min)}${x.act && x.act !== x.min ? " (" + x.act + " min in)" : ""}`) : "Late minutes entered by payroll") + `; ${fmtHMc(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
+  if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHMc(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${fmtHMc(x.min)}${x.act && x.act !== x.min ? " (actual " + fmtHMc(x.act) + " late)" : ""}`) : "Late minutes entered by payroll") + `; ${fmtHMc(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
   if (!c.perHour && Array.isArray(W.underList) && W.underList.length) { const um = W.underList.reduce((n, x) => n + (+x.min || 0), 0); D.push(["Undertime (" + fmtHMc(um) + ") - no deduction", 0, dl(W.underList, (x) => `${fd(x.d)}: out ${m12(x.out)} (${fmtHMc(x.min)} early)`)]); }
   (W.holDedList || []).length ? D.push(["Holiday deduction", c.holDed, W.holDedList.map((h) => `${h.label || fd(h.date)} (${fd(h.date)}): paid at ${h.pct}% of the day`).join("; ")]) : c.holDed ? D.push(["Holiday deduction", c.holDed, "Holiday paid below 100% of the day (Settings)"]) : 0;
   (W.wfhDedList || []).length ? D.push(["WFH / Async deduction", c.wfhDed, W.wfhDedList.map((h) => `${fd(h.date)}${h.label ? " " + h.label : ""}: ${h.pct ? "paid at " + h.pct + "%" : "day without pay"}`).join("; ")]) : c.wfhDed ? D.push(["WFH / Async deduction", c.wfhDed, "WFH / asynchronous day paid below 100%"]) : 0;
@@ -57,7 +57,7 @@ function slipHTML(s, run, sg, copy) {
   let lateAdd = 0;
   if (c.perHour && !(ci && (ci.lateDedMin ?? ci.lateMin) > 0 && ci.lateOn !== false) && c.lateMin > 0) {
     const dy0 = (d) => new Date(String(d).slice(0, 10) + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), amt0 = r2(c.lateMin / 60 * c.rate);
-    lateAdd += amt0; D.push(["Late (" + fmtHMc(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${x.min} min late`).join("; ")]);
+    lateAdd += amt0; D.push(["Late (" + fmtHMc(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${fmtHMc(x.min)} late`).join("; ")]);
     const bi0 = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi0 >= 0) E[bi0] = [E[bi0][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + c.lateMin)} hrs`), E[bi0][1] + amt0];
   }
   if (c.perHour && ci) {

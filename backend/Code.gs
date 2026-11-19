@@ -15,7 +15,7 @@ var DEFAULT_EMAIL = 'reymonde.silvestre@gmail.com', DEFAULT_PASS = 'payroll123';
 var TABS = {
   Employees: ['ID', 'Employee No', 'Last name', 'First name', 'M.I.', 'Name', 'Birthday', 'Gender', 'Civil status', 'Position', 'Department', 'Employment type', 'Date hired', 'Status', 'SSS No', 'PhilHealth No', 'Pag-IBIG No', 'TIN', 'Category', 'Monthly basic', 'Daily rate', 'Hourly rate', 'Email', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'CA balance', 'CA per payday', 'Cash advance (JSON)', 'Allowances (JSON)', 'Loans (JSON)', 'Updated', 'Photo'],
   'Payroll Runs': ['Run ID', 'Period', 'Pay date', 'Employees', 'Gross', 'Deductions', 'Net pay', 'Saved by', 'Saved at', 'Group', 'Status'],
-  Payslips: ['Run ID', 'Period', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans/Other', 'Cash advance', 'Total deductions', 'Net pay', 'Detail (JSON)'],
+  Payslips: ['Run ID', 'Period', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans/Other', 'Cash advance', 'Total deductions', 'Net pay', 'Detail (JSON)', 'Late days', 'Late hours deducted (H:MM)', 'Actual late after grace (H:MM)', 'Late deduction amount'],
   Settings: ['Key', 'Value'],
   Leaves: ['ID', 'Employee ID', 'Employee No', 'Name', 'Type', 'Paid', 'From', 'To', 'Days', 'Reason', 'Status', 'Filed by', 'Filed at'],
   'Daily Attendance Logs': ['Date', 'Day', 'Employee No', 'Name', 'Department', 'Group', 'Time in', 'Time out', 'Hours worked', 'Late (min)', 'Early in (min)', 'Early out (min)', 'Overtime (min)', 'Status', 'Remarks'],
@@ -32,7 +32,7 @@ var TABS = {
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
 var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave', 'clsReport'];   // what a Class Monitor account may call: the class check, the class schedule and the class-check DTR, nothing else
 var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v9-2026-11-18d';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var SCHEMA_V = 'v10-2026-11-19a';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -85,6 +85,12 @@ function ensureSchema_(ss) {
     }
     if (n === 'Payroll Runs' && sh.getRange(1, 10).getValue() !== 'Group') sh.getRange(1, 10).setValue('Group').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');   // older runs tab: add the Group column
     if (n === 'Payroll Runs' && sh.getRange(1, 11).getValue() !== 'Status') sh.getRange(1, 11).setValue('Status').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');   // older runs tab: add the Status column (runs without a status count as Finalized)
+    if (n === 'Payslips') {   // older Payslips tab: add the late columns (23-26) after Detail (JSON); hours stay text like 1:00
+      var PH = TABS.Payslips;
+      if (sh.getMaxColumns() < PH.length) sh.insertColumnsAfter(sh.getMaxColumns(), PH.length - sh.getMaxColumns());
+      if (sh.getRange(1, 23).getValue() !== PH[22]) sh.getRange(1, 23, 1, 4).setValues([PH.slice(22, 26)]).setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff');
+      sh.getRange(2, 24, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@');
+    }
     if (n === 'Users') sh.getRange(1, 1, sh.getMaxRows(), 8).setNumberFormat('@');
     if (n === 'Leaves') [2, 3, 7, 8, 13].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // ids and dates stay as typed
     if (n === 'Employees' && sh.getRange(1, 3).getValue() === 'Last name' && sh.getRange(1, 34).getValue() !== 'Photo') {   // older Employees tab: add the Photo column
@@ -209,8 +215,8 @@ function doPost(e) {
       delGroups_(Run, 1, id); delGroups_(Sl, 1, id); delGroups_(Sm, 1, id);   // a few block deletes (before: one deleteRow call per payslip)
       Run.appendRow([id, d.period, d.payDate, d.slips.length, d.gross, d.ded, d.net, me.name, new Date(), d.group || '', d.status === 'Draft' ? 'Draft' : 'Finalized']);
       Run.getRange(Run.getLastRow(), 5, 1, 3).setNumberFormat('#,##0.00');
-      var rowsOut = d.slips.map(function (p) { var c = p.calc; return [id, d.period, p.no, p.name, p.position, c.basic, c.allow, c.ot, (Number(c.otherEarn) || 0) + (Number(c.wfhPay) || 0), c.holPay, c.gross, (Number(c.absent) || 0) + (Number(c.wfhDed) || 0), c.late, c.sssEe, c.phicEe, c.hdmfEe, c.tax, c.other, c.caDed, c.totalDed, c.net, JSON.stringify(c)]; });
-      if (rowsOut.length) { var s1 = Sl.getLastRow() + 1; if (Sl.getMaxRows() < s1 + rowsOut.length) Sl.insertRowsAfter(Sl.getMaxRows(), s1 + rowsOut.length - Sl.getMaxRows()); Sl.getRange(s1, 1, rowsOut.length, rowsOut[0].length).setValues(rowsOut); Sl.getRange(s1, 6, rowsOut.length, 16).setNumberFormat('#,##0.00'); }
+      var rowsOut = d.slips.map(function (p) { var c = p.calc; return [id, d.period, p.no, p.name, p.position, c.basic, c.allow, c.ot, (Number(c.otherEarn) || 0) + (Number(c.wfhPay) || 0), c.holPay, c.gross, (Number(c.absent) || 0) + (Number(c.wfhDed) || 0), c.late, c.sssEe, c.phicEe, c.hdmfEe, c.tax, c.other, c.caDed, c.totalDed, c.net, JSON.stringify(c), +c.lateDays || 0, hm_(c.lateDedMin), hm_(c.lateActMin), num_(c.lateAmt != null ? c.lateAmt : c.late)]; });
+      if (rowsOut.length) { var s1 = Sl.getLastRow() + 1; if (Sl.getMaxRows() < s1 + rowsOut.length) Sl.insertRowsAfter(Sl.getMaxRows(), s1 + rowsOut.length - Sl.getMaxRows()); Sl.getRange(s1, 24, rowsOut.length, 2).setNumberFormat('@'); Sl.getRange(s1, 1, rowsOut.length, rowsOut[0].length).setValues(rowsOut); Sl.getRange(s1, 26, rowsOut.length, 1).setNumberFormat('#,##0.00'); Sl.getRange(s1, 6, rowsOut.length, 16).setNumberFormat('#,##0.00'); }
       // PAYSLIP SUMMARY (main database): employee name, salary (net pay) and a blank Signature column for each payslip of the run
       var sumRows = d.slips.map(function (p) { return [id, String(d.period || ''), String(d.payDate || ''), grp_(d.group), String(p.no || ''), String(p.name || ''), num_(p.calc.net), '']; });
       if (sumRows.length) { var s2 = Sm.getLastRow() + 1; if (Sm.getMaxRows() < s2 + sumRows.length) Sm.insertRowsAfter(Sm.getMaxRows(), s2 + sumRows.length - Sm.getMaxRows()); Sm.getRange(s2, 1, sumRows.length, 8).setValues(sumRows); Sm.getRange(s2, 7, sumRows.length, 1).setNumberFormat('#,##0.00'); }
@@ -418,6 +424,7 @@ var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'A
 var GROUP_NAMES = { staff: 'Staff', teacher: 'Teachers', admin: 'School admins' };
 
 function txt_(v) { return v instanceof Date ? Utilities.formatDate(v, 'Asia/Manila', 'yyyy-MM-dd') : String(v == null ? '' : v); }
+function hm_(m) { m = Math.max(0, Math.round(+m || 0)); return m ? Math.floor(m / 60) + ':' + ('0' + (m % 60)).slice(-2) : ''; }   // minutes as Hours:Minutes (90 = 1:30)
 function num_(v) { return Math.round((+v || 0) * 100) / 100; }
 function pj_(s) { try { return JSON.parse(s || '{}') || {}; } catch (e) { return {}; } }
 function natCmp_(a, b) { return String(a).localeCompare(String(b), undefined, { numeric: true }); }
@@ -462,6 +469,8 @@ function thPut_(ss, st) {   // rewrites the Teacher Hours tab of the database so
   if (rows.length) sh.getRange(2, 1, rows.length, w).setValues(rows);
 }
 
+function lateDays_(s) { var v = s.r['Late days']; return v !== '' && v != null ? +v || 0 : (+s.c.lateDays || 0); }   // payslips saved before this update have no value: 0
+function lateHm_(s, col, key) { var v = s.r[col]; return v !== '' && v != null ? txt_(v) : hm_(s.c[key]); }
 function bkBuild_(emps, runs, slips, year, workDays, st, cls) {
   var empBy = {}, nameBy = {}, runBy = {}, stamp = Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a');
   emps.forEach(function (e) { empBy[String(e.no)] = e; nameBy[String(e.name).toLowerCase()] = e; });
@@ -489,10 +498,10 @@ function bkBuild_(emps, runs, slips, year, workDays, st, cls) {
 
   // 2. EMPLOYEE PAYSLIP
   defs.push({ name: 'EMPLOYEE PAYSLIP', title: 'EMPLOYEE PAYSLIP', subtitle: sub + '  |  every saved payroll, newest first', blocks: [{
-    header: ['Pay date', 'Period', 'Group', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans / other', 'Cash advance', 'Total deductions', 'Net pay'],
-    text: [0, 1, 3], money: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21], total: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+    header: ['Pay date', 'Period', 'Group', 'Employee No', 'Name', 'Position', 'Basic', 'Allowances', 'Overtime', 'Other earnings', 'Holiday pay', 'Gross', 'Absent', 'Late', 'Late days', 'Late hours deducted (H:MM)', 'Actual late after grace (H:MM)', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans / other', 'Cash advance', 'Total deductions', 'Net pay'],
+    text: [0, 1, 3, 15, 16], money: [6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 20, 21, 22, 23, 24], total: [6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 21, 22, 23, 24],
     rows: S.map(function (s) {
-      var r = s.r; return [s.pay, s.period, s.grp, s.no, s.name, String(r.Position || ''), num_(r.Basic), num_(r.Allowances), num_(r.Overtime), num_(r['Other earnings']), num_(r['Holiday pay']), num_(r.Gross), num_(r.Absent), num_(r.Late), num_(r.SSS), num_(r.PhilHealth), num_(r['Pag-IBIG']), num_(r.Tax), num_(r['Loans/Other']), num_(r['Cash advance']), num_(r['Total deductions']), num_(r['Net pay'])];
+      var r = s.r; return [s.pay, s.period, s.grp, s.no, s.name, String(r.Position || ''), num_(r.Basic), num_(r.Allowances), num_(r.Overtime), num_(r['Other earnings']), num_(r['Holiday pay']), num_(r.Gross), num_(r.Absent), num_(r.Late), lateDays_(s), lateHm_(s, 'Late hours deducted (H:MM)', 'lateDedMin'), lateHm_(s, 'Actual late after grace (H:MM)', 'lateActMin'), num_(r.SSS), num_(r.PhilHealth), num_(r['Pag-IBIG']), num_(r.Tax), num_(r['Loans/Other']), num_(r['Cash advance']), num_(r['Total deductions']), num_(r['Net pay'])];
     }) }] });
 
   // 2b. PAYSLIP SUMMARY: one block per payroll run: employee name, salary (net pay) and an empty Signature column to sign on

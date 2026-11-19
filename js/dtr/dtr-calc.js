@@ -49,8 +49,8 @@ function dtrCalc(e, from, to) {
         if (TH > 0 && r.st === "half") r.hrs = TH * (1 - (+(D.halfDayAbs ?? 0.5)));   // half day: part of the scheduled hours
       } else r.note = r.inn === null ? "No time in" : "No time out";
       if (SC.sat && wd && !isH) r.note = (r.note ? r.note + "; " : "") + "Saturday half day (paid 1 day)";
-      if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late " + fmtHMc(r.late) + (r.lateRaw && r.lateRaw !== r.late ? " (" + r.lateRaw + " min in)" : "");
-      else if (r.lateRaw) r.note = (r.note ? r.note + "; " : "") + "Late " + r.lateRaw + " min (not counted)";
+      if (r.late) r.note = (r.note ? r.note + "; " : "") + "Late " + fmtHMc(r.late) + (r.lateRaw && r.lateRaw !== r.late ? " (actual " + fmtHMc(r.lateRaw) + " late)" : "");
+      else if (r.lateRaw) r.note = (r.note ? r.note + "; " : "") + "Late " + fmtHMc(r.lateRaw) + " (not counted)";
       if (r.early) r.note = (r.note ? r.note + "; " : "") + "Early in " + fmtHM(r.early);
       if (r.earlyOut) r.note = (r.note ? r.note + "; " : "") + "Early out " + fmtHM(r.earlyOut);
       if (r.st === "absent") o.absent++;
