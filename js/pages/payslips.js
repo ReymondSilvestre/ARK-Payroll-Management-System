@@ -51,6 +51,11 @@ function slipHTML(s, run, sg, copy) {
   if (c.caDed) D.push(["Cash advance", c.caDed, `Repayment; balance ${P(c.caBal)} to ${P(c.caAfter)}`]);
   const ci = c.classInfo;
   let lateAdd = 0;
+  if (c.perHour && !(ci && ci.lateMin > 0) && c.lateMin > 0) {
+    const dy0 = (d) => new Date(String(d).slice(0, 10) + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), amt0 = r2(c.lateMin / 60 * c.rate);
+    lateAdd += amt0; D.push(["Late (" + fmtHM(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${x.min} min late`).join("; ")]);
+    const bi0 = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi0 >= 0) E[bi0] = [E[bi0][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + c.lateMin)} hrs`), E[bi0][1] + amt0];
+  }
   if (c.perHour && ci) {
     const t12 = (x) => { if (!x) return ""; const [h, i] = String(x).split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(i || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
     const dy = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -73,7 +78,7 @@ function slipHTML(s, run, sg, copy) {
   <tr>${cell("SSS No.", dash(e.sssNo), 3)}${cell("PhilHealth No.", dash(e.philhealthNo), 3)}${cell("Pag-IBIG No.", dash(e.pagibigNo), 3)}${cell("TIN", dash(e.tin), 3)}</tr>
   <tr>${RL.map((x) => `<th colspan="2">${x}</th>`).join("")}</tr>
   <tr>${RV.map((x) => `<td colspan="2" class="c">${x}</td>`).join("")}</tr>
-  <tr><th colspan="3">EARNINGS</th><th colspan="2">Amount</th><th colspan="5">DEDUCTIONS (and what each is for)</th><th colspan="2">Amount</th></tr>${body}
+  <tr><th colspan="3">EARNINGS</th><th colspan="2">Amount</th><th colspan="5">DEDUCTIONS</th><th colspan="2">Amount</th></tr>${body}
   <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross + lateAdd)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed + lateAdd)}</td></tr></table>
   ${(c.caBal > 0 || c.caDed > 0) ? `<table class="ca"><tr><th colspan="12">CASH ADVANCE BALANCE</th></tr><tr>${cell("Balance before this pay", P(c.caBal), 4)}${cell("Deducted this pay", P(c.caDed), 4)}${cell("Remaining balance", P(c.caAfter), 4)}</tr></table>` : ""}
   
