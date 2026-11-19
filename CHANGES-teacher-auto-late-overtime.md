@@ -6,3 +6,8 @@ Settings > Auto late & overtime now has a **Teachers (separate settings)** block
 - **Auto early-out deduction** (ON by default) - ON: hours stop at the time out; OFF: early out is only reported and hours count to the class end. The Early out line on the payslip follows it.
 - **Early in is not counted as overtime** (ON by default) - OFF adds the early-in minutes as overtime, only for teachers allowed overtime.
 The existing "Deduct late automatically" switch now applies to staff and admins only.
+
+## Teacher late deduction: per hour after the grace period
+- Late is counted only after the teacher's grace period and deducted per whole hour, rounded up, for each class (e.g. grace 15 min, in 20 min late = 5 min late after grace = 1:00 deducted).
+- The payslip Late line shows the deducted hours; the day notes show "(0:05 late after grace, deducted 1:00)".
+- Early out is still deducted by the exact minutes. Teachers paid from DTR hours (no class schedule) are not changed.

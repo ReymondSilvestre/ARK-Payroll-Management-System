@@ -39,7 +39,7 @@ function slipHTML(s, run, sg, copy) {
     if (abD > 0) parts.push(`${abD} day${abD === 1 ? "" : "s"} absent` + (Array.isArray(W.absentList) && W.absentList.length ? ": " + dl(W.absentList, (x) => `${fd(x.d)} (${x.why})`) : " (entered by payroll)"));
     if (lvD > 0) parts.push(`${lvD} day${lvD === 1 ? "" : "s"} leave without pay` + ((W.leaveList || []).length ? ": " + dl(W.leaveList, (x) => `${x.type || "Leave"} ${fd(x.from)}${x.to !== x.from ? " - " + fd(x.to) : ""}`) : ""));
     D.push([lvD > 0 ? "Absences / unpaid leave" : "Absences", c.absent, parts.join("; ") + ` x ${P(c.dailyRate)} per day`]); }
-  if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHM(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${x.min} min`) : "Late minutes entered by payroll") + `; ${fmtHM(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
+  if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHMc(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${fmtHMc(x.min)}`) : "Late minutes entered by payroll") + `; ${fmtHMc(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
   (W.holDedList || []).length ? D.push(["Holiday deduction", c.holDed, W.holDedList.map((h) => `${h.label || fd(h.date)} (${fd(h.date)}): paid at ${h.pct}% of the day`).join("; ")]) : c.holDed ? D.push(["Holiday deduction", c.holDed, "Holiday paid below 100% of the day (Settings)"]) : 0;
   (W.wfhDedList || []).length ? D.push(["WFH / Async deduction", c.wfhDed, W.wfhDedList.map((h) => `${fd(h.date)}${h.label ? " " + h.label : ""}: ${h.pct ? "paid at " + h.pct + "%" : "day without pay"}`).join("; ")]) : c.wfhDed ? D.push(["WFH / Async deduction", c.wfhDed, "WFH / asynchronous day paid below 100%"]) : 0;
   const timing = (w) => (!W.semi ? "" : w === "first" ? "; taken in the 1st cut-off" : w === "second" ? "; taken in the 2nd cut-off" : "; half in each cut-off"), gov = (nm, v, w, man) => D.push([nm, v, man ? "Amount set by payroll for this run" : v > 0 ? "Required contribution, employee share" + timing(w) : W.semi ? "Taken in the other cut-off" : "Not deducted"]);
@@ -51,18 +51,18 @@ function slipHTML(s, run, sg, copy) {
   if (c.caDed) D.push(["Cash advance", c.caDed, `Repayment; balance ${P(c.caBal)} to ${P(c.caAfter)}`]);
   const ci = c.classInfo;
   let lateAdd = 0;
-  if (c.perHour && !(ci && ci.lateMin > 0 && ci.lateOn !== false) && c.lateMin > 0) {
+  if (c.perHour && !(ci && (ci.lateDedMin ?? ci.lateMin) > 0 && ci.lateOn !== false) && c.lateMin > 0) {
     const dy0 = (d) => new Date(String(d).slice(0, 10) + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }), amt0 = r2(c.lateMin / 60 * c.rate);
-    lateAdd += amt0; D.push(["Late (" + fmtHM(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${x.min} min late`).join("; ")]);
+    lateAdd += amt0; D.push(["Late (" + fmtHMc(c.lateMin) + ")", amt0, "", (W.lateList || []).map((x) => `${dy0(x.d)}: ${x.min} min late`).join("; ")]);
     const bi0 = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi0 >= 0) E[bi0] = [E[bi0][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + c.lateMin)} hrs`), E[bi0][1] + amt0];
   }
   if (c.perHour && ci) {
     const t12 = (x) => { if (!x) return ""; const [h, i] = String(x).split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(i || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
     const dy = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    const eo = ci.earlyOutOn === false ? 0 : (+ci.earlyOutMin || 0), lm = ci.lateOn === false ? 0 : (+ci.lateMin || 0);   // a late / early out that is not deducted (Settings > Teachers) is not shown as a deduction
-    if (lm > 0) { const amt = r2(lm / 60 * c.rate); lateAdd += amt; D.push(["Late (" + fmtHM(lm) + ")", amt, "", (ci.lateList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min late)`).join("; ")]); }
-    if (eo > 0) { const amt = r2(eo / 60 * c.rate); lateAdd += amt; D.push(["Early out (" + fmtHM(eo) + ")", amt, "", (ci.earlyOutList || []).map((x) => `${dy(x.d)}: class ends ${t12(x.end)}, out ${t12(x.out)} (${x.min} min early)`).join("; ")]); }
-    if ((+ci.earlyInMin || 0) > 0) D.push(["Early in (" + fmtHM(ci.earlyInMin) + ") - no deduction", 0, "", (ci.earlyInList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${x.min} min early)`).join("; ")]);
+    const eo = ci.earlyOutOn === false ? 0 : (+ci.earlyOutMin || 0), lm = ci.lateOn === false ? 0 : (ci.lateDedMin !== undefined ? +ci.lateDedMin || 0 : +ci.lateMin || 0);   // a late / early out that is not deducted (Settings > Teachers) is not shown as a deduction
+    if (lm > 0) { const amt = r2(lm / 60 * c.rate); lateAdd += amt; D.push(["Late (" + fmtHMc(lm) + ")", amt, "", (ci.lateList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${fmtHMc(x.min)} late after grace${x.ded ? ", deducted " + fmtHMc(x.ded) : ""})`).join("; ")]); }
+    if (eo > 0) { const amt = r2(eo / 60 * c.rate); lateAdd += amt; D.push(["Early out (" + fmtHMc(eo) + ")", amt, "", (ci.earlyOutList || []).map((x) => `${dy(x.d)}: class ends ${t12(x.end)}, out ${t12(x.out)} (${fmtHMc(x.min)} early)`).join("; ")]); }
+    if ((+ci.earlyInMin || 0) > 0) D.push(["Early in (" + fmtHMc(ci.earlyInMin) + ") - no deduction", 0, "", (ci.earlyInList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${fmtHMc(x.min)} early)`).join("; ")]);
     const bi = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi >= 0 && lateAdd > 0) E[bi] = [E[bi][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + lm + eo)} hrs`), E[bi][1] + lateAdd];
   }
   const n = Math.max(E.length, D.length, 6); let body = "";
