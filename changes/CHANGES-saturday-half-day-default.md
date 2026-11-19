@@ -8,3 +8,7 @@ Files changed (replace these on your web host / GitHub Pages):
 
 After uploading: hard refresh (Ctrl+F5), open Settings > Saturday half day, press Save settings once.
 Code.gs is NOT changed.
+
+## Update 2 - ticked departments became unticked after saving
+Cause: department matching treated the word "Department" as a match, so "Registrar Department" = "Finance Department" etc.
+Fix: js/dtr/rules.js (deptLike ignores "Department/Office/Division..."; new deptOn(): the exact name wins). js/settings/saturday.js uses it.

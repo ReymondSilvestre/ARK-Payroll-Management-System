@@ -9,7 +9,7 @@ function satHTML(S) {
   // every department of the employees, plus any saved department that no employee has (yet)
   const names = new Map(); emps.forEach((e) => { const d = String(e.dept || "").trim(); if (d && !names.has(d.toLowerCase())) names.set(d.toLowerCase(), d); });
   (H.depts || []).forEach((d) => { d = String(d).trim(); if (d && ![...names.values()].some((n) => deptLike(n, d))) names.set(d.toLowerCase(), d); });
-  const list = [...names.values()].sort((a, b) => a.localeCompare(b)), isOn = (n) => (H.depts || []).some((x) => deptLike(n, x)) && !(H.off || []).some((x) => deptLike(n, x));
+  const list = [...names.values()].sort((a, b) => a.localeCompare(b)), isOn = (n) => deptOn(n, H);
   const people = emps.slice().sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
   return `<div data-sp="sat" ${spHide("sat")}><h3>Saturday half day</h3>
   <p class="muted">Some departments only work half a day on Saturday, but the pay is still <b>one full day</b> (the monthly pay already includes it, so nothing is deducted). On those Saturdays the DTR uses the time below instead of the usual time in / out: late, early out and absent are checked against it.</p>

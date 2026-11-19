@@ -11,18 +11,24 @@ function shiftsOfDept(e) { const dn = String(e.dept || "").trim().toLowerCase();
 /** Department names match when they are the same, share all their words ("Accounting / Finance" = "Finance") or start the same way ("Administration" = "Administrative"). */
 function deptLike(a, b) {
   a = String(a || "").trim().toLowerCase(); b = String(b || "").trim().toLowerCase(); if (!a || !b) return false; if (a === b) return true;
-  const wa = a.split(/[^a-z0-9]+/).filter(Boolean), wb = b.split(/[^a-z0-9]+/).filter(Boolean); if (!wa.length || !wb.length) return false;
+  const fill = new Set(["department", "dept", "office", "division", "section", "unit", "team", "the", "of", "and"]), words = (t) => { const w = t.split(/[^a-z0-9]+/).filter(Boolean), k = w.filter((x) => !fill.has(x)); return k.length ? k : w; };   // "Registrar Department" must not match "Finance Department"
+  const wa = words(a), wb = words(b); if (!wa.length || !wb.length) return false;
   if (wb.every((w) => wa.includes(w)) || wa.every((w) => wb.includes(w))) return true;
   return wa.some((x) => wb.some((y) => x.length >= 7 && y.length >= 7 && x.slice(0, 7) === y.slice(0, 7)));
 }
 
 /** Saturday half day (Settings > Saturday half-day): the people of the chosen departments (or chosen one by one) work 8:00 AM - 12:00 noon on Saturday, and the day is still paid as ONE full day (the monthly pay already covers it, so nothing is deducted).
     Overtime on such a Saturday starts at the "OT from" time (1:00 PM) and only when it is allowed that day. Returns null for everybody else. */
+function deptOn(name, H) {
+  const ex = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+  if ((H.depts || []).some((x) => ex(name, x))) return true; if ((H.off || []).some((x) => ex(name, x))) return false;
+  return (H.depts || []).some((x) => deptLike(name, x)) && !(H.off || []).some((x) => deptLike(name, x));
+}
 function satHalfOf(e) {
   const H = (ST.settings.dtr || {}).satHalf; if (!H || H.on === false || !e || categoryOf(e) === "teacher") return null;
   const own = (H.people || {})[e.id];
   if (own !== "yes" && (shiftsOfDept(e).length || ((ST.settings.dtr || {}).empShift || {})[e.id])) return null;   // people on a shift (Maintenance, Security...) work their shift on Saturday too: the half-day Saturday time does not apply to them unless chosen one by one under Exceptions
-  let yes = own === "yes" ? true : own === "no" ? false : ((H.depts || []).some((x) => deptLike(e.dept, x)) && !(H.off || []).some((x) => deptLike(e.dept, x))); if (!yes) return null;
+  let yes = own === "yes" ? true : own === "no" ? false : deptOn(e.dept, H); if (!yes) return null;
   const m = (x, def) => { const [h, mi] = String(x || def).split(":").map(Number); return h * 60 + (mi || 0); };
   return { start: H.start || "08:00", end: H.end || "12:00", otFromMin: m(H.otFrom, "13:00"), otAuto: H.otMode === "auto" };
 }
