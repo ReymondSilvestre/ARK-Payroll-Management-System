@@ -25,3 +25,9 @@ The existing "Deduct late automatically" switch now applies to staff and admins 
 - Overtime is counted in whole hours. The minutes past the last full hour count as one more hour only from minute 31 (1 hr 30 min = 1 hr, 1 hr 31 min to 1 hr 59 min = 2 hrs, 1-30 min alone = 0).
 - Settings > Overtime: "Counted in blocks of (minutes)" = 60 and new "Minutes of the hour from which a full hour counts" = 31 (0 = the excess minutes are never counted). Set once for saved settings; later changes are kept.
 - Applies to late time out and holiday / WFH work. Overtime typed in the Overtime File is paid as filed.
+
+## Payroll tab: OT hours in exact Hours:Minutes
+- The OT hours column shows exact hours as H:MM (e.g. 2:00, 1:30) like Hours taught, no decimals. You can type H:MM (or a decimal) to override it. js/pages/payroll.js only.
+
+## Payslip: overtime in Hours:Minutes
+- The Overtime box and the Overtime earnings line show H:MM (e.g. 2:00, 1:30), not "1 hr 30 min". js/pages/payslips.js only.
