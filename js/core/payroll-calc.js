@@ -85,8 +85,10 @@ function yearlyTax(taxable, brackets) {
 function paidDaysOf(period, S, div) {
   const a = period && period.start, b = period && period.end;
   if (!a || !b || a > b) return r2((+S.workDays || 0) / (div || 1));
-  const wd = ((S.dtr && S.dtr.workDays) || [1, 2, 3, 4, 5, 6]).map(Number); let n = 0;
-  for (let d = new Date(a + "T12:00"), e = new Date(b + "T12:00"); d <= e; d.setDate(d.getDate() + 1)) if (wd.includes(d.getDay())) n++;
+  const wd = ((S.dtr && S.dtr.workDays) || [1, 2, 3, 4, 5, 6]).map(Number), ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  // a REGULAR holiday that falls on a rest day (e.g. a Sunday) is still paid, so it counts as a paid day of the cut-off too (the payroll page adds it to the holidays of the period the same way)
+  const restHol = new Set(((S.dtr && S.dtr.holidays) || []).filter((h) => S.restDayHoliday !== false && h.type === "regular" && h.date >= a && h.date <= b).map((h) => String(h.date).slice(0, 10))); let n = 0;
+  for (let d = new Date(a + "T12:00"), e = new Date(b + "T12:00"); d <= e; d.setDate(d.getDate() + 1)) if (wd.includes(d.getDay()) || restHol.has(ymd(d))) n++;
   return n;
 }
 
@@ -116,7 +118,8 @@ function computeSlip(info, inp, S, period) {
   const monthly = perHour || mB ? r2(basic * div) : baseMonthly;      // the monthly equivalent (used by the percent rates and the tax estimate)
   const daily = !perHour && !mB ? dailyRateOf(info, S) : monthly / S.workDays, hourly = perHour ? rate : daily / S.hoursPerDay;
   const absentDays = perHour ? 0 : (+i.absentDays || 0) + (+i.leaveDays || 0);
-  const allowList = (info.allowances || []).map((a) => { if (isDowAllow(a)) { const dd = allowDaysIn(a, S, period, i); return { label: a.label, amount: r2((+a.amount || 0) * dd.length), perDay: true, daily: r2(+a.amount || 0), count: dd.length, dowLabel: dowLabel(a.days) }; } return { label: a.label, amount: r2(allowMonthly(a, S) / div), perDay: !!a.perDay, daily: a.perDay ? r2(+a.amount || 0) : null }; }), allow = r2(allowList.reduce((n, a) => n + a.amount, 0));
+  const cutDays = semi && S.payByCutoff !== false && !!(period && period.start && period.end), allowList = (info.allowances || []).map((a) => { if (isDowAllow(a)) { const dd = allowDaysIn(a, S, period, i); return { label: a.label, amount: r2((+a.amount || 0) * dd.length), perDay: true, daily: r2(+a.amount || 0), count: dd.length, dowLabel: dowLabel(a.days) }; } if (a.perDay && cutDays) { const nd = paidDaysOf(period, S, div); return { label: a.label, amount: r2((+a.amount || 0) * nd), perDay: true, daily: r2(+a.amount || 0), count: nd }; }   // daily allowance: the paid days of THIS cut-off x the daily amount (not a fixed half of workDays)
+    return { label: a.label, amount: r2(allowMonthly(a, S) / div), perDay: !!a.perDay, daily: a.perDay ? r2(+a.amount || 0) : null }; }), allow = r2(allowList.reduce((n, a) => n + a.amount, 0));
   const ot = r2((+i.otHours || 0) * hourly * S.otRate), otherEarn = r2(+i.otherEarn || 0);
   const absent = perHour ? 0 : r2(absentDays * daily), late = perHour ? 0 : r2((lateDeductMin(S, +i.lateMin || 0) / 60) * hourly);
   const mc = monthlyContrib(monthly, info, S);

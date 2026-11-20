@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   otFile: [],                     // the overtime file: [{id, empId, date, hours, reason}]
   frequency: "semi",              // "semi" = twice a month (1-15 and 16-end), "monthly" = once a month
   payByCutoff: true,             // twice-a-month pay of daily-rate people = paid days of THAT cut-off x daily rate (holidays included); off = fixed half of the monthly pay
+  restDayHoliday: true,          // a REGULAR holiday that falls on a rest day (Sunday) is counted and paid (true) or not counted at all (false)
   workDays: 26,                   // working days in a month: daily rate = monthly pay / workDays
   hoursPerDay: 8,
   otRate: 1.25,                   // overtime = hourly rate x this
