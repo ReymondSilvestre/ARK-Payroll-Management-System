@@ -25,6 +25,11 @@ function showLogin() {
 
 async function load() {
   const b = await api("bootstrap"); ST.settings = mergeSettings(b.settings); daysMigrate(); minutesMigrate(); otHourMigrate(); satMigrate(); phAutoFill(); ST.employees = b.employees; ST.runs = b.runs; ST.sheet = ""; ST.backup = b.backup || ""; ST.leaves = b.leaves || [];
+  if (Array.isArray(b.dtrLinks)) {   // biometric records linked by hand: the database is the master. A browser that never synced before adds its own links to it once.
+    const sv = {}; b.dtrLinks.forEach((x) => (sv[x.key] = x.empId)); const synced = localStorage.getItem("pms.dtrLinkSync") === "1", merged = synced ? sv : { ...((ST.dtr && ST.dtr.link) || {}), ...sv };
+    ST.dtr.link = merged; ST._dm = null; saveDtr(); try { localStorage.setItem("pms.dtrLinkSync", "1"); } catch { }
+    if (!synced && Object.keys(merged).some((k) => sv[k] !== merged[k])) saveLinks();
+  }
   if (!ST.user) ST.user = JSON.parse(localStorage.getItem("pms.user") || "null"); else localStorage.setItem("pms.user", JSON.stringify(ST.user));
   shell();
 }

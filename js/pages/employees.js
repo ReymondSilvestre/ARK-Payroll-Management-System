@@ -30,7 +30,19 @@ document.addEventListener("change", (ev) => {
   el.value = o.value; el.dataset.prev = o.value;
 });
 
-const fld = (f, e) => { const [k, l, t] = f, v = e[k] ?? (k === "status" ? "Active" : ""); if (t === "dyn") { const cur = String(v || "").trim(); return `<div><label>${l}</label><select id="f_${k}" data-prev="${esc(cur)}"><option value="">-</option>${dynOpts(k, cur).map((o) => `<option value="${esc(o)}" ${o.toLowerCase() === cur.toLowerCase() ? "selected" : ""}>${esc(o)}</option>`).join("")}<option value="__new__">+ Add new ${k === "dept" ? "department" : "position"}...</option></select></div>`; } if (Array.isArray(t)) return `<div><label>${l}</label><select id="f_${k}">${t.map((o) => { const [ov, ol] = Array.isArray(o) ? o : [o, o || "-"]; return `<option value="${esc(ov)}" ${String(v) === String(ov) ? "selected" : ""}>${esc(ol)}</option>`; }).join("")}</select></div>`; return `<div><label>${l}</label><input id="f_${k}" type="${t === "date" ? "date" : "text"}" value="${esc(v)}"></div>`; };
+/** Any date as it may be saved in the database or typed in Excel (2026-05-20, 2026-05-20T00:00:00Z, 5/20/1990, 20/05/1990, May 20, 1990, 20-May-1990, an Excel date number) -> "yyyy-mm-dd", the only format the date box of the form can show. "" when it is not a date. */
+function isoDate(v) {
+  if (v instanceof Date) return isNaN(v) ? "" : `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}`;
+  const s = String(v ?? "").trim(), p = (n) => String(n).padStart(2, "0"), ok = (y, m, d) => { const t = new Date(+y, +m - 1, +d); return t.getFullYear() === +y && t.getMonth() === +m - 1 && t.getDate() === +d ? `${y}-${p(m)}-${p(d)}` : ""; };
+  if (!s) return ""; let m;
+  if ((m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?!\d)/.exec(s))) return ok(m[1], m[2], m[3]);
+  if ((m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/.exec(s))) { const y = m[3].length === 2 ? (+m[3] > 30 ? 1900 : 2000) + +m[3] : +m[3], a = +m[1], b = +m[2], dmy = a > 12 || (b <= 12 && ((ST.settings.dtr || {}).dateOrder === "DMY")); return dmy ? ok(y, b, a) : ok(y, a, b); }
+  if (/^\d{5}(\.\d+)?$/.test(s) && +s > 1000 && +s < 80000) { const t = new Date(Math.round((+s - 25569) * 864e5)); return `${t.getUTCFullYear()}-${p(t.getUTCMonth() + 1)}-${p(t.getUTCDate())}`; }   // Excel date number
+  if (/[A-Za-z]{3}/.test(s)) { const c = s.replace(/(\d)(st|nd|rd|th)\b/i, "$1"), t = new Date(/\d:\d|GMT/.test(c) ? c : c + " 12:00"); if (!isNaN(t)) return isoDate(t); }
+  return "";
+}
+
+const fld = (f, e) => { const [k, l, t] = f, v0 = e[k] ?? (k === "status" ? "Active" : ""), v = t === "date" ? isoDate(v0) : v0; if (t === "dyn") { const cur = String(v || "").trim(); return `<div><label>${l}</label><select id="f_${k}" data-prev="${esc(cur)}"><option value="">-</option>${dynOpts(k, cur).map((o) => `<option value="${esc(o)}" ${o.toLowerCase() === cur.toLowerCase() ? "selected" : ""}>${esc(o)}</option>`).join("")}<option value="__new__">+ Add new ${k === "dept" ? "department" : "position"}...</option></select></div>`; } if (Array.isArray(t)) return `<div><label>${l}</label><select id="f_${k}">${t.map((o) => { const [ov, ol] = Array.isArray(o) ? o : [o, o || "-"]; return `<option value="${esc(ov)}" ${String(v) === String(ov) ? "selected" : ""}>${esc(ol)}</option>`; }).join("")}</select></div>`; return `<div><label>${l}</label><input id="f_${k}" type="${t === "date" ? "date" : "text"}" value="${esc(v)}"></div>`; };
 
 function emp(edit) {
   const e = edit || {}; if (edit) ST.empView = "add";
@@ -47,7 +59,11 @@ function emp(edit) {
   $("#sv").onclick = async () => {
     const o = { ...e }; if (ST.photoDraft !== undefined) o.photo = ST.photoDraft; [...EF, ...GF, ...PF].forEach(([k]) => o[k] = $("#f_" + k).value.trim()); if (o.position === "__new__") o.position = ""; if (o.dept === "__new__") o.dept = "";
     ["sss", "philhealth", "pagibig", "tax"].forEach((k) => o[k] = $("#f_" + k).value === "1");
-    for (const [k, l] of [["no", "Employee No."], ["last", "Last name"], ["first", "First name"], ["birthday", "Birthday"], ["status", "Status"]]) if (!o[k]) return toast(l + " is required.", true);
+    for (const [k, l] of [["no", "Employee No."], ["last", "Last name"], ["first", "First name"], ["birthday", "Birthday"], ["status", "Status"]]) if (!o[k]) {
+      const box = $("#f_" + k), old = String(e[k] ?? "").trim();
+      if (box && box.type === "date" && box.validity && box.validity.badInput) return toast(l + " is not complete: type the month, day and year, or pick it from the calendar.", true);   // the box holds a half-typed date
+      return toast(l + " is required." + (box && box.type === "date" && old && !isoDate(old) ? ` The saved value "${old}" is not a valid date: pick the date again.` : ""), true);
+    }
     const r = await api("saveEmployees", { list: [o] }); applyEmps(r); ST.empView = "list"; toast("Saved."); emp();
   };
   if (edit) $("#cn").onclick = () => { ST.empView = "list"; emp(); };

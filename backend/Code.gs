@@ -24,6 +24,7 @@ var TABS = {
   'Cash Loans': ['Employee No', 'Name', 'Department', 'Group', 'Loan type', 'Description', 'Per month', 'Balance', 'Status', 'As of'],
   Users: ['ID', 'Name', 'Email', 'Role', 'Department', 'Photo', 'Password hash', 'Salt', 'Created', 'Active'],
   'Overtime File': ['ID', 'Employee ID', 'Employee No', 'Name', 'Date', 'Hours', 'Reason', 'Filed by', 'Filed at'],
+  'Biometric Links': ['Link key', 'Biometric ID', 'Device', 'Name in file', 'Employee ID', 'Employee No', 'Employee name', 'Linked by', 'Linked at', 'Matched by'],   // biometric record -> employee: linked by hand (Matched by = manual) or matched by the app (name / first name / ID)
   'Payslip Summary': ['Run ID', 'Period', 'Pay date', 'Group', 'Employee No', 'Employee name', 'Salary (net pay)', 'Signature'],
   'Teacher Hours': ['Employee No', 'Teacher', 'Department', 'Day', 'Time in', 'Time out', 'Paid hours', 'Remarks', 'Fixed holiday pay (per day)', 'Fixed WFH pay (per day)'],   // one row per teacher per work day (written at every settings save)
   'Class Schedule': ['ID', 'Employee ID', 'Employee No', 'Teacher', 'Subject', 'Section / Room', 'Days', 'Start', 'End', 'Active'],   // the classes of each teacher (Days = 1,2,3 = Mon, Tue, Wed ... 0 = Sun)
@@ -33,7 +34,7 @@ var TABS = {
 var HR_ACTIONS = ['bootstrap', 'saveLeave', 'deleteLeave', 'otAdd', 'otRemove'];   // what an HR account may call: leave and the overtime file, nothing else
 var MON_ACTIONS = ['bootstrap', 'clsGet', 'clsMark', 'clsSave', 'clsReport'];   // what a Class Monitor account may call: the class check, the class schedule and the class-check DTR, nothing else
 var ROLES = ['payroll', 'hr', 'monitor'];                                                       // roles that can be given to a new account ('admin' exists only for the default owner)
-var SCHEMA_V = 'v11-2026-11-19b';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
+var SCHEMA_V = 'v13-2026-11-20';                                                      // change this text when TABS change: the tabs are then checked once, not on every request
 
 function setup() { var ss = db_(); resetDefaultUser(); Logger.log('DATABASE IN USE: ' + ss.getUrl()); return 'Database ready (private, only visible to you here in the editor): ' + ss.getUrl(); }
 function showDatabaseLink() { var u = db_().getUrl(); Logger.log('DATABASE IN USE: ' + u); return u; }   // editor only: View > Logs (or Execution log) shows the link
@@ -104,6 +105,8 @@ function ensureSchema_(ss) {
     if (n === 'Class Schedule') [1, 2, 3, 7, 8, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Class Attendance') [1, 2, 3, 4, 8, 9, 10, 11, 15].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Teacher Hours') [1, 5, 6].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
+    if (n === 'Biometric Links' && sh.getRange(1, 10).getValue() !== 'Matched by') { if (sh.getMaxColumns() < 10) sh.insertColumnsAfter(sh.getMaxColumns(), 10 - sh.getMaxColumns()); sh.getRange(1, 10).setValue('Matched by').setFontWeight('bold').setBackground('#b3121f').setFontColor('#ffffff'); }   // tab made by the first version: add the Matched by column
+    if (n === 'Biometric Links') [1, 2, 3, 5, 6, 9].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Payslip Summary') [1, 2, 3, 5].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });
     if (n === 'Employees') [2, 7, 13, 15, 16, 17, 18].forEach(function (c) { sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); });   // numbers like SSS / TIN keep their zeros, dates stay as typed
   });
@@ -136,7 +139,7 @@ function resetDefaultUser() {
   seedUser_(); return 'Default user reset: ' + DEFAULT_EMAIL + ' / ' + DEFAULT_PASS;
 }
 
-function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-18d' }); }
+function doGet() { return out_({ ok: true, data: 'Payroll Management System API is running.', version: 'hr-fast-2026-11-20-biolinks' }); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 function doPost(e) {
@@ -176,7 +179,7 @@ function doPost(e) {
         res = { settings: sOut, employees: rows_(Emp).filter(function (r) { return r.ID; }).map(function (r) { var o = empOut_(r); return { id: o.id, no: o.no, last: o.last, first: o.first, mi: o.mi, name: o.name, position: o.position, dept: o.dept, etype: o.etype, status: o.status, category: o.category, photo: '' }; }), runs: [], leaves: lvs, backup: '' };
       } else {
         if (setObj) setObj.otFile = ot;
-        res = { settings: setObj, employees: rows_(Emp).map(empOut_), runs: runsOut_(Run), leaves: lvs, backup: props.getProperty('BK_URL') || '' };
+        res = { settings: setObj, employees: rows_(Emp).map(empOut_), runs: runsOut_(Run), leaves: lvs, backup: props.getProperty('BK_URL') || '', dtrLinks: bioLinksOut_(ss) };
       }
     } else if (A === 'listRuns') {
       res = runsOut_(Run);
@@ -315,6 +318,8 @@ function doPost(e) {
       if (fresh.length) { var n1 = Ca.getLastRow() + 1; if (Ca.getMaxRows() < n1 + fresh.length) Ca.insertRowsAfter(Ca.getMaxRows(), n1 + fresh.length - Ca.getMaxRows()); Ca.getRange(n1, 1, fresh.length, 15).setNumberFormat('@').setValues(fresh); }
       res = attOut_(ss, dt, dt);
       if (!cache.get('cls_bk')) { cache.put('cls_bk', '1', 1800); markBackup_(); }   // the backup report follows the class check (at most every 30 minutes; the nightly backup also catches up)
+    } else if (A === 'saveDtrLinks') {            // the biometric records linked by hand to an employee: the whole list, so an unlink is saved too
+      bioLinksPut_(ss, d.links || [], me.name); markBackup_(); res = bioLinksOut_(ss);
     } else if (A === 'otAdd') {                   // add / change overtime entries: [{id, empId, date, hours, reason}] (HR and payroll)
       otPut_(ss, d.list || [], me.name); res = otRows_(ss);
     } else if (A === 'otRemove') {
@@ -454,6 +459,28 @@ function attOut_(ss, from, to) {   // recorded classes between two dates (yyyy-m
   return out;
 }
 var DAYS3_ = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+
+/* BIOMETRIC LINKS: its own tab (Biometric Links) and the BIOMETRIC LINKS sheet of the backup report. Key = [device|]biometric ID, or n:NAME when the file has no ID number. */
+function bioLinkRows_(ss) { return rows_(ss.getSheetByName('Biometric Links')).filter(function (r) { return r['Link key'] && r['Employee ID']; }); }
+function bioLinksOut_(ss) { return bioLinkRows_(ss).filter(function (r) { return !r['Matched by'] || txt_(r['Matched by']) === 'manual'; }).map(function (r) { return { key: txt_(r['Link key']), empId: txt_(r['Employee ID']), name: txt_(r['Name in file']) }; }); }
+function bioLinksPut_(ss, list, by) {
+  var sh = ss.getSheetByName('Biometric Links'), old = {}, emp = {}, seen = {}, out = [], now = Utilities.formatDate(new Date(), 'Asia/Manila', 'yyyy-MM-dd HH:mm');
+  bioLinkRows_(ss).forEach(function (r) { old[txt_(r['Link key'])] = r; });
+  rows_(ss.getSheetByName('Employees')).forEach(function (r) { if (r.ID) emp[String(r.ID)] = r; });
+  (list || []).forEach(function (x) {
+    var k = String(x.key || '').trim(), e = emp[String(x.empId)]; if (!k || !e || seen[k]) return; seen[k] = 1;
+    var i = k.indexOf('|'), dev = i > 0 ? k.slice(0, i) : '', bid = i > 0 ? k.slice(i + 1) : k, o = old[k], same = o && txt_(o['Employee ID']) === String(e.ID);
+    out.push([k, bid.indexOf('n:') === 0 ? '' : bid, dev, String(x.name || (o && o['Name in file']) || ''), String(e.ID), txt_(e['Employee No']), String(e.Name || ''), same ? String(o['Linked by'] || by) : by, same ? txt_(o['Linked at']) : now, String(x.by || 'manual')]);   // who linked it and when stay while the link is unchanged
+  });
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 10).clearContent();
+  if (out.length) sh.getRange(2, 1, out.length, 10).setValues(out);
+}
+function bioLinkDef_(ss, stamp) {
+  var emp = {}; rows_(ss.getSheetByName('Employees')).forEach(function (r) { if (r.ID) emp[String(r.ID)] = r; });
+  var rows = bioLinkRows_(ss).map(function (r) { var e = emp[txt_(r['Employee ID'])]; return [txt_(r['Biometric ID']), txt_(r.Device), txt_(r['Name in file']), e ? txt_(e['Employee No']) : txt_(r['Employee No']), e ? String(e.Name || '') : String(r['Employee name'] || ''), String(r['Linked by'] || ''), txt_(r['Linked at']), txt_(r['Matched by']) || 'manual']; });
+  rows.sort(function (a, b) { return natCmp_(a[4], b[4]); });
+  return { name: 'BIOMETRIC LINKS', title: 'BIOMETRIC LINKS', subtitle: 'Backup copy of the Payroll Management System  |  every biometric record matched to an employee: linked by hand (manual) or matched by the app by name / first name / ID, sent ' + stamp, blocks: [{ header: ['Biometric ID', 'Device', 'Name in file', 'Employee No', 'Employee name', 'Linked by', 'Linked at', 'Matched by'], text: [0, 1, 2, 3, 6], money: [], total: [], rows: rows }] };
+}
 
 /* OVERTIME FILE: its own tab (Overtime File). Entries: {id, empId, date, hours, reason}. */
 function otOut_(r) { return { id: String(r.ID), empId: String(r['Employee ID']), no: txt_(r['Employee No']), name: r.Name, date: txt_(r.Date), hours: +r.Hours || 0, reason: r.Reason || '', by: r['Filed by'] || '', at: txt_(r['Filed at']) }; }
@@ -739,6 +766,7 @@ function updateBackup_(year, sheets) {
   var stObj = {}; try { stObj = setRead_(db) || {}; wd = +stObj.workDays || 22; } catch (e0) { }
   var cls = { sched: rows_(db.getSheetByName('Class Schedule')).filter(function (r) { return r.ID; }), att: rows_(db.getSheetByName('Class Attendance')).filter(function (r) { return r['Class ID']; }) };
   var defs = bkBuild_(emps, runs, slips, y, wd, stObj, cls).concat(bkExtra_(sheets, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
+  defs.push(bioLinkDef_(db, Utilities.formatDate(new Date(), 'Asia/Manila', 'MMM d, yyyy h:mm a')));
   // The attendance tabs are filled from the app. Until the first time they are sent, show them as empty tabs so they are always in the backup.
   [['DAILY ATTENDANCE LOGS', TABS['Daily Attendance Logs']],
    ['SUMMARY OF ATTENDANCE', TABS['Summary of Attendance']]].forEach(function (p) {

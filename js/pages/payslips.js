@@ -39,14 +39,14 @@ function slipHTML(s, run, sg, copy) {
   if (c.ot) E.push(["Overtime" + (c.otHours > 0 ? " (" + fmtHMc(Math.round(c.otHours * 60)) + " hrs)" : ""), c.ot]); if (c.otherEarn) E.push(["Other earnings", c.otherEarn]); if (c.wfhPay) E.push([c.perHour ? (c.wfhFixed ? "WFH / Async class pay (fixed per day)" : "WFH / Async class pay (per hour)") : "WFH / Async class pay (per day)", c.wfhPay]);
   /* DEDUCTIONS: every line says WHAT it is for (D = [label, amount, reason]) */
   const W = c.why || {}, fd = (d) => { const x = new Date(String(d).slice(0, 10) + "T12:00"); return isNaN(x) ? String(d) : x.toLocaleDateString("en-US", { month: "short", day: "numeric" }); }, dl = (arr, f, max) => { const a = (arr || []).map(f); return a.slice(0, max || 8).join(", ") + (a.length > (max || 8) ? ` +${a.length - (max || 8)} more` : ""); };
-  const D = [];
+  const D = [], AB = [];   // AB = absences / half days: shown on the EARNINGS side as a minus (not under DEDUCTIONS)
   const hv = +((ST.settings.dtr || {}).halfDayAbs ?? 0.5), hList = !c.perHour && Array.isArray(W.halfList) && Array.isArray(W.absentList) ? W.halfList : [], halfDays = r2(hList.length * hv), halfAmt = Math.min(c.absent || 0, r2(halfDays * (c.dailyRate || 0)));   // half days are shown on their own line
   const m12 = (m) => { m = Math.round(+m || 0); const h = Math.floor(m / 60) % 24; return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
-  if (hList.length && halfAmt > 0) D.push(["Half day (" + hList.length + (hList.length === 1 ? " day" : " days") + ")", halfAmt, hList.map((x) => `${fd(x.d)} (${x.why})`).join("; ") + ` x ${hv} day x ${P(c.dailyRate)} per day`]);
+  if (hList.length && halfAmt > 0) AB.push(["Less: Half day (" + hList.length + (hList.length === 1 ? " day" : " days") + ")", halfAmt, hList.map((x) => `${fd(x.d)} (${x.why})`).join("; ") + ` x ${hv} day x ${P(c.dailyRate)} per day`]);
   if (c.absent - halfAmt > 0.004) { const lvD = +c.leaveDays || 0, abD = Math.max(0, r2((c.absentDays || 0) - lvD - halfDays)), parts = [], aList = Array.isArray(W.absentList) ? W.absentList.filter((x) => !(hList.length && x.why === "half day")) : W.absentList;
     if (abD > 0) parts.push(`${abD} day${abD === 1 ? "" : "s"} absent` + (Array.isArray(aList) && aList.length ? ": " + dl(aList, (x) => `${fd(x.d)} (${x.why})`) : " (entered by payroll)"));
     if (lvD > 0) parts.push(`${lvD} day${lvD === 1 ? "" : "s"} leave without pay` + ((W.leaveList || []).length ? ": " + dl(W.leaveList, (x) => `${x.type || "Leave"} ${fd(x.from)}${x.to !== x.from ? " - " + fd(x.to) : ""}`) : ""));
-    D.push([lvD > 0 ? "Absences / unpaid leave" : "Absences", r2(c.absent - halfAmt), parts.join("; ") + ` x ${P(c.dailyRate)} per day`]); }
+    AB.push([lvD > 0 ? "Less: Absences / unpaid leave" : "Less: Absences", r2(c.absent - halfAmt), parts.join("; ") + ` x ${P(c.dailyRate)} per day`]); }
   if (c.late) D.push(["Late" + (c.lateMin ? " (" + fmtHMc(c.lateMin) + ")" : ""), c.late, (Array.isArray(W.lateList) && W.lateList.length ? `Came in late ${W.lateList.length} day${W.lateList.length === 1 ? "" : "s"}: ` + dl(W.lateList, (x) => `${fd(x.d)} ${fmtHMc(x.min)}${x.act && x.act !== x.min ? " (actual " + fmtHMc(x.act) + " late)" : ""}`) : "Late minutes entered by payroll") + `; ${fmtHMc(c.lateMin)} x ${P(rate)} per hour (after the grace period)`]);
   if (!c.perHour && Array.isArray(W.underList) && W.underList.length) { const um = W.underList.reduce((n, x) => n + (+x.min || 0), 0); D.push(["Undertime (" + fmtHMc(um) + ") - no deduction", 0, dl(W.underList, (x) => `${fd(x.d)}: out ${m12(x.out)} (${fmtHMc(x.min)} early)`)]); }
   (W.holDedList || []).length ? D.push(["Holiday deduction", c.holDed, W.holDedList.map((h) => `${h.label || fd(h.date)} (${fd(h.date)}): paid at ${h.pct}% of the day`).join("; ")]) : c.holDed ? D.push(["Holiday deduction", c.holDed, "Holiday paid below 100% of the day (Settings)"]) : 0;
@@ -74,8 +74,10 @@ function slipHTML(s, run, sg, copy) {
     if ((+ci.earlyInMin || 0) > 0) D.push(["Early in (" + fmtHMc(ci.earlyInMin) + ") - no deduction", 0, "", (ci.earlyInList || []).map((x) => `${dy(x.d)}: class ${t12(x.start)}, in ${t12(x.inn)} (${fmtHMc(x.min)} early)`).join("; ")]);
     const bi = E.findIndex((x) => /^Teaching pay/.test(x[0])); if (bi >= 0 && lateAdd > 0) E[bi] = [E[bi][0].replace(/\(.*? hrs/, `(${fmtHMc(Math.round(c.hours * 60) + lm + eo)} hrs`), E[bi][1] + lateAdd];
   }
+  AB.forEach((x) => E.push([x[0], -x[1]])); const moved = r2(AB.reduce((t, x) => t + x[1], 0));   // minus on the earnings side: gross pay is lower by the same amount and the deductions are too, so NET PAY does not change
+  const PM = (v) => (v < 0 ? "-" + P(-v) : P(v));
   const n = Math.max(E.length, D.length, 6); let body = "";
-  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? P(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[3] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[3])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
+  for (let i = 0; i < n; i++) { const a = E[i], b = D[i]; body += `<tr><td colspan="3">${a ? esc(a[0]) : "&nbsp;"}</td><td colspan="2" class="n">${a ? PM(a[1]) : ""}</td><td colspan="5">${b ? esc(b[0]) + (b[3] ? `<br><span style="font-weight:400;font-size:8.5px;color:#333;line-height:1.25">${esc(b[3])}</span>` : "") : ""}</td><td colspan="2" class="n">${b ? P(b[1]) : ""}</td></tr>`; }
   const RL = c.perHour ? ["Rate per hour", "Hours taught (H:MM)", "Days present", "Days absent", "No. of holidays", "Overtime"] : ["Rate per day", "Paid days (regular working days)", "Days present", "Days absent", "No. of holidays", "Overtime"];
   const pres = c.presentDays === null || c.presentDays === undefined ? "-" : c.presentDays;
   const RV = c.perHour ? [P(c.rate), fmtHMc(Math.round(c.hours * 60)), pres, "-", c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")] : [P(c.dailyRate), regDays + (holAmt > 0 ? `<br><span style="font-weight:400;font-size:9px">Holiday pay: ${P(holAmt)}</span>` : ""), pres, c.absentDays, c.holidays || 0, (c.otHours > 0 ? fmtHMc(Math.round(c.otHours * 60)) : "-")];
@@ -88,7 +90,7 @@ function slipHTML(s, run, sg, copy) {
   <tr>${RL.map((x) => `<th colspan="2">${x}</th>`).join("")}</tr>
   <tr>${RV.map((x) => `<td colspan="2" class="c">${x}</td>`).join("")}</tr>
   <tr><th colspan="3">EARNINGS</th><th colspan="2">Amount</th><th colspan="5">DEDUCTIONS</th><th colspan="2">Amount</th></tr>${body}
-  <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross + lateAdd)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed + lateAdd)}</td></tr></table>
+  <tr class="tot"><td colspan="3">GROSS PAY</td><td colspan="2" class="n">${P(c.gross + lateAdd - moved)}</td><td colspan="5">TOTAL DEDUCTIONS</td><td colspan="2" class="n">${P(c.totalDed + lateAdd - moved)}</td></tr></table>
   ${(c.caBal > 0 || c.caDed > 0) ? `<table class="ca"><tr><th colspan="12">CASH ADVANCE BALANCE</th></tr><tr>${cell("Balance before this pay", P(c.caBal), 4)}${cell("Deducted this pay", P(c.caDed), 4)}${cell("Remaining balance", P(c.caAfter), 4)}</tr></table>` : ""}
   
   <div class="net">NET PAY: ${P(c.net)}</div>

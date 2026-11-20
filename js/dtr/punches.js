@@ -52,26 +52,59 @@ const lev = (a, b) => { const m = a.length, n = b.length; let p = Array.from({ l
 
 const tokEq = (a, b) => a === b || (a.length > 4 && b.length > 4 && lev(a, b) <= 1) || (a === "MA" && b.startsWith("MA")) || (b === "MA" && a.startsWith("MA"));
 
+/** How well does a biometric name fit an employee (0 = not the same person, 1 = same)? Tolerates the usual differences between the device and the employee file:
+    "Last, First" or "First Last" order, glued surnames (DELACRUZ), a full middle name in the file (employee file has only the M.I.), initials instead of given names (J.C., "M. ELENA"),
+    and names cut short by the device (DELA CRUZ JUAN CAR). A different middle initial / middle name still means another person: link that one by hand. */
 function nameScore(bp, ep) {
   const E = [...ep.L, ...ep.F]; if (!bp || !bp.all.length || !E.length) return 0;
   const cb = bp.all.join(""), Lc = ep.L.join(""), Fc = ep.F.join(""); let sc;
   if (cb === Lc + Fc || cb === Fc + Lc) sc = 1;
   else {
-    const toks = bp.all.slice(), used = new Set(); let fh = 0;
+    const toks = bp.all.slice(), used = new Set(); let pen = 0, fh = 0, ini = bp.ini.slice(), midDone = false;
     if (ep.L.length > 1) { const i = toks.findIndex((t) => tokEq(t, Lc)); if (i >= 0) { toks.splice(i, 1); ep.L.forEach((_, j) => used.add(j)); } }   // "DELACRUZ" = "Dela Cruz"
-    for (const t of toks) { const k = E.findIndex((x, i) => !used.has(i) && tokEq(t, x)); if (k < 0) return 0; used.add(k); if (k >= ep.L.length) fh++; }
-    if (!fh || [...used].filter((i) => i < ep.L.length).length !== ep.L.length) return 0;   // the whole surname AND at least one given name must be there
+    const extra = [];
+    toks.forEach((t, ti) => {
+      let k = E.findIndex((x, i) => !used.has(i) && tokEq(t, x));
+      if (k < 0 && ti === toks.length - 1 && t.length >= 3) { k = E.findIndex((x, i) => !used.has(i) && x.length > t.length && x.startsWith(t)); if (k >= 0) pen += 0.12; }   // cut short by the device
+      if (k >= 0) { used.add(k); if (k >= ep.L.length) fh++; } else extra.push(t);
+    });
+    for (const t of extra) {
+      if (ep.mi && t[0] === ep.mi && !midDone) { midDone = true; continue; }                     // the full middle name: its first letter is the employee's M.I.
+      const g = [...Array(ep.F.length).keys()].map((i) => ep.L.length + i).filter((i) => !used.has(i));
+      if (t.length <= 3 && g.length) { const pick = []; let gi = 0; for (const ch of t) { const m = g.slice(gi).findIndex((i) => E[i][0] === ch); if (m < 0) { pick.length = 0; break; } pick.push(g[gi + m]); gi += m + 1; } if (pick.length === t.length) { pick.forEach((i) => used.add(i)); fh++; pen += 0.04; continue; } }   // squashed initials: JC = Juan Carlos
+      if (ep.mi) return 0;                                                                          // another middle name: probably another person
+      pen += 0.1; if (pen > 0.25) return 0;                                                         // an extra name (the employee file has no middle name)
+    }
+    let initOnly = 0;
+    for (const c of ini) {
+      const g = [...Array(ep.F.length).keys()].map((i) => ep.L.length + i).find((i) => !used.has(i) && E[i][0] === c);
+      if (g !== undefined && !(ep.mi === c && !fh)) { used.add(g); initOnly++; }                    // initial of a given name (M. ELENA, J. C.)
+      else if (ep.mi && c === ep.mi) midDone = true;
+      else if (ep.mi) return 0;                                                                     // a different middle initial = probably another person
+    }
+    if (!(fh + initOnly) || [...used].filter((i) => i < ep.L.length).length !== ep.L.length) return 0;   // the whole surname AND at least one given name (or its initial) must be there
     if (!bp.flat && !bp.L.every((t) => ep.L.some((x) => tokEq(t, x)) || tokEq(t, Lc))) return 0; // "LAST, First" must agree on the surname side
-    sc = 0.6 + 0.4 * used.size / E.length;
+    sc = 0.6 + 0.4 * used.size / E.length - pen;
+    if (!fh) sc = Math.min(sc, 0.8);                                                              // initials only: a weaker match
+    if (midDone) sc += 0.05;
+    return Math.max(0, Math.min(1, sc));
   }
-  if (bp.ini.length && ep.mi) { if (!bp.ini.includes(ep.mi)) return 0; sc += 0.05; }   // a different middle initial = probably another person: link it by hand
+  if (bp.ini.length && ep.mi) { if (!bp.ini.includes(ep.mi)) return 0; sc += 0.05; }
   return Math.min(1, sc);
+}
+
+/** A record with only a FIRST NAME in the file (e.g. "JUAN" or "MARIA ELENA"): it belongs to the employee whose given name it is, but only when no other employee has that first name; otherwise it is listed as "fits several" (the ID number can still decide). */
+function firstNameOnly(bp, P) {
+  if (!bp || !bp.flat || !bp.all.length || bp.all.length > 3) return null;
+  const hit = P.filter(([, ep]) => { const used = new Set(); return ep.F.length && bp.all.every((t) => { const k = ep.F.findIndex((x, i) => !used.has(i) && tokEq(t, x)); if (k < 0) return false; used.add(k); return true; }); }).map((x) => x[0]);
+  if (!hit.length) return null;
+  return hit.length === 1 ? { e: hit[0], first: true } : { amb: hit };
 }
 
 function matchName(name, P) {
   const bp = bioParts(name); if (!bp) return null;
   const r = P.map(([e, ep]) => [e, nameScore(bp, ep)]).filter((x) => x[1] >= 0.7).sort((a, b) => b[1] - a[1]);
-  if (!r.length) return null;
+  if (!r.length) return firstNameOnly(bp, P);
   return r[1] && r[0][1] - r[1][1] < 0.1 ? { amb: r.filter((x) => r[0][1] - x[1] < 0.1).map((x) => x[0]) } : { e: r[0][0] };
 }
 
@@ -84,10 +117,10 @@ function dtrMap() {
     const nm = D.names[k] || "", man = D.link[k] && emps.find((e) => e.id === D.link[k]), m = !man && nm ? matchName(nm, P) : null, idE = byNo.get(normNo(keyId(k)));
     let e = null, by = "", warn = "";
     if (man) { e = man; by = "manual"; }
-    else if (m && m.e) { e = m.e; by = "name"; }
+    else if (m && m.e) { e = m.e; by = m.first ? "first name" : "name"; }
     else if (m && m.amb && idE && m.amb.includes(idE)) { e = idE; by = "name + ID"; }
     else if (!(m && m.amb) && idE) { e = idE; by = "ID"; if (nm) warn = "name in file: " + nm; }
-    if (e) { const x = (byEmp[e.id] ||= { keys: [], by: [], warn: [] }); x.keys.push(k); if (!x.by.includes(by)) x.by.push(by); if (warn) x.warn.push(warn); }
+    if (e) { const x = (byEmp[e.id] ||= { keys: [], by: [], warn: [] }); (x.kb ||= {})[k] = by; x.keys.push(k); if (!x.by.includes(by)) x.by.push(by); if (warn) x.warn.push(warn); }
     else unmatched.push({ key: k, name: nm, amb: m && m.amb ? m.amb : null });
   }
   return (ST._dm = { byEmp, unmatched });
@@ -104,6 +137,16 @@ function daysOf(e) {
 ST.dtr = (() => { try { return JSON.parse(localStorage.getItem("pms.dtr")) || { days: {} }; } catch { return { days: {} }; } })();
 
 const saveDtr = () => { try { localStorage.setItem("pms.dtr", JSON.stringify(ST.dtr)); } catch { } };
+
+/** Records linked by hand to an employee are also kept in the main database (tab "Biometric Links") and the backup report (sheet BIOMETRIC LINKS), so they survive a new computer or a cleared browser. The whole list is sent, so an unlink is saved too. */
+const dtrLinkList = () => {
+  const D = ST.dtr || {}, out = {}, nm = (k) => (D.names || {})[k] || "";
+  for (const [key, empId] of Object.entries(D.link || {})) out[key] = { key, empId, name: nm(key), by: "manual" };
+  for (const [empId, m] of Object.entries(dtrMap().byEmp)) for (const [key, by] of Object.entries(m.kb || {})) if (!out[key]) out[key] = { key, empId, name: nm(key), by };   // matched by the app (name / first name / ID): listed too, but recomputed at every upload
+  return Object.values(out);
+};
+/** true = saved in the database. A failure is NOT hidden: the caller shows it (a "Linked" message must not cover it). */
+async function saveLinks() { try { await api("saveDtrLinks", { links: dtrLinkList() }); return true; } catch { return false; } }
 
 function parseStamp(v) {
   if (v instanceof Date) return isNaN(v) ? null : new Date(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds());
